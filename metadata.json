@@ -1,0 +1,6 @@
+{
+  "name": "Outpost Zero",
+  "description": "A sunlit brutalist 3D first-person shooter built with Three.js featuring tactical wave combat, dual procedural weapons, and responsive movement.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
