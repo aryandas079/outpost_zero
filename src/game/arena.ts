@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { craftedBox, batchDecoration, optimizeStaticArena } from './geometry';
 import { ProceduralTextures } from './textures';
 
 export interface BoxCollider {
@@ -64,6 +65,7 @@ export interface ArenaData {
   arenaHalfSize: number;
   bounds: ArenaBounds;
   animatedProps: ArenaAnimatedProps;
+  optimizeRendering: () => { before: number; after: number };
   dispose: () => void;
 }
 
@@ -638,7 +640,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     shootable = true,
     castShadow = true,
   ): THREE.Mesh => {
-    const mesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w, h, d)), mat);
+    const mesh = new THREE.Mesh(trackGeo(craftedBox(w, h, d)), mat);
     mesh.position.set(x, y, z);
     mesh.castShadow = castShadow;
     mesh.receiveShadow = true;
@@ -717,7 +719,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     cGroup.position.set(x, 0, z);
     cGroup.rotation.y = rotY;
 
-    const core = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(size * 0.88, size * 0.88, size * 0.88)), crateMat);
+    const core = new THREE.Mesh(trackGeo(craftedBox(size * 0.88, size * 0.88, size * 0.88)), crateMat);
     core.position.y = size * 0.5;
     core.castShadow = true;
     core.receiveShadow = true;
@@ -728,9 +730,9 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const railT = size * 0.1;
     const half = size * 0.45;
     const innerSpan = Math.max(0.1, size - railT * 2.02);
-    const vPostGeo = trackGeo(new THREE.BoxGeometry(railT, size, railT));
-    const hRailXGeo = trackGeo(new THREE.BoxGeometry(innerSpan, railT, railT));
-    const hRailZGeo = trackGeo(new THREE.BoxGeometry(railT, railT, innerSpan));
+    const vPostGeo = trackGeo(craftedBox(railT, size, railT));
+    const hRailXGeo = trackGeo(craftedBox(innerSpan, railT, railT));
+    const hRailZGeo = trackGeo(craftedBox(railT, railT, innerSpan));
 
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
@@ -757,7 +759,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     }
 
     // Iron reinforcement brackets seated cleanly proud of top 4 corners
-    const bracketGeo = trackGeo(new THREE.BoxGeometry(railT * 1.24, railT * 1.24, railT * 1.24));
+    const bracketGeo = trackGeo(craftedBox(railT * 1.24, railT * 1.24, railT * 1.24));
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         const b = new THREE.Mesh(bracketGeo, ironMat);
@@ -871,7 +873,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     hitch.position.set(x, 0, z);
     hitch.rotation.y = rotY;
     for (const px of [-1.25, 1.25]) {
-      const p = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.15, 1.18, 0.15)), woodDarkMat);
+      const p = new THREE.Mesh(trackGeo(craftedBox(0.15, 1.18, 0.15)), woodDarkMat);
       p.position.set(px, 0.59, 0);
       p.castShadow = true;
       p.receiveShadow = true;
@@ -932,7 +934,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     return rawH * (1 - railCut * 0.94);
   };
 
-  const terrainGeo = trackGeo(new THREE.PlaneGeometry(460, 460, 128, 128));
+  const terrainGeo = trackGeo(new THREE.PlaneGeometry(460, 460, 64, 64));
   terrainGeo.rotateX(-Math.PI / 2);
   const tPos = terrainGeo.attributes.position;
   const tColors = new Float32Array(tPos.count * 3);
@@ -992,6 +994,37 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   shootableMeshes.push(eastPlaza);
   walkableMeshes.push(eastPlaza);
 
+  // Embedded gravel breaks the perfectly flat road silhouette. A single draw call
+  // covers the whole street; stones stay below the player's step threshold.
+  const gravelGeo = trackGeo(new THREE.IcosahedronGeometry(1, 0));
+  const gravel = new THREE.InstancedMesh(gravelGeo, boulderMat, 480);
+  gravel.name = 'Wind-scoured street gravel';
+  gravel.receiveShadow = true;
+  gravel.userData.noCollide = true;
+  const gravelPose = new THREE.Object3D();
+  const gravelTint = new THREE.Color();
+  let gravelSeed = 7251;
+  const gravelRandom = () => {
+    gravelSeed = (Math.imul(gravelSeed, 1664525) + 1013904223) >>> 0;
+    return gravelSeed / 4294967296;
+  };
+  for (let i = 0; i < gravel.count; i++) {
+    const x = -48 + gravelRandom() * 86;
+    // Keep the center of the carriageway comparatively worn and clear.
+    const side = gravelRandom() > 0.5 ? 1 : -1;
+    const z = 0.8 + side * (2.8 + gravelRandom() * 3.6);
+    const radius = 0.018 + gravelRandom() ** 2 * 0.095;
+    gravelPose.position.set(x, 0.035 + radius * 0.18, z);
+    gravelPose.rotation.set(gravelRandom(), gravelRandom() * Math.PI, gravelRandom());
+    gravelPose.scale.set(radius * 1.5, radius * 0.48, radius);
+    gravelPose.updateMatrix();
+    gravel.setMatrixAt(i, gravelPose.matrix);
+    gravelTint.setHSL(0.085 + gravelRandom() * 0.035, 0.18 + gravelRandom() * 0.18, 0.35 + gravelRandom() * 0.2);
+    gravel.setColorAt(i, gravelTint);
+  }
+  gravel.computeBoundingSphere();
+  group.add(gravel);
+
   // Architectural Walkable Concrete Aprons, Riveted Steel Plates & Tempered Glass Inspection Panels
   // Elevated cleanly above street plane (0.032) with non-overlapping iron corner borders -> ZERO Z-fighting!
   const addWalkablePad = (
@@ -1007,7 +1040,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const isGlass = mat === floorGlassMat;
     if (framed) {
       // Recessed dark steel utility shaft sitting below the top surface
-      const pit = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w - 0.06, 0.024, d - 0.06)), ironMat);
+      const pit = new THREE.Mesh(trackGeo(craftedBox(w - 0.06, 0.024, d - 0.06)), ironMat);
       pit.position.set(x, baseY + 0.012, z);
       pit.receiveShadow = true;
       pit.userData.noCollide = true;
@@ -1017,14 +1050,14 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       const frameH = h + 0.022;
       const frameY = baseY + frameH * 0.5;
       for (const sz of [-1, 1]) {
-        const edgeX = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w + 0.22, frameH, 0.11)), ironMat);
+        const edgeX = new THREE.Mesh(trackGeo(craftedBox(w + 0.22, frameH, 0.11)), ironMat);
         edgeX.position.set(x, frameY, z + sz * (d * 0.5 + 0.055));
         edgeX.receiveShadow = true;
         edgeX.userData.noCollide = true;
         group.add(edgeX);
       }
       for (const sx of [-1, 1]) {
-        const edgeZ = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.11, frameH, d)), ironMat);
+        const edgeZ = new THREE.Mesh(trackGeo(craftedBox(0.11, frameH, d)), ironMat);
         edgeZ.position.set(x + sx * (w * 0.5 + 0.055), frameY, z);
         edgeZ.receiveShadow = true;
         edgeZ.userData.noCollide = true;
@@ -1034,7 +1067,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     const padGeo = isGlass
       ? trackGeo(new THREE.PlaneGeometry(w, d))
-      : trackGeo(new THREE.BoxGeometry(w, h, d));
+      : trackGeo(craftedBox(w, h, d));
     if (isGlass) padGeo.rotateX(-Math.PI / 2);
     const pad = new THREE.Mesh(padGeo, mat);
     pad.position.set(x, isGlass ? baseY + h : baseY + h * 0.5, z);
@@ -1259,7 +1292,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   const trackLength = 210;
 
   // Crushed gravel railway ballast berm (clean non-overlapping center bed + flanking shoulders)
-  const ballastBed = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.25, 0.085, trackLength)), ballastMat);
+  const ballastBed = new THREE.Mesh(trackGeo(craftedBox(3.25, 0.085, trackLength)), ballastMat);
   ballastBed.position.set(railX, 0.0425, 0);
   ballastBed.receiveShadow = true;
   ballastBed.userData.noCollide = true;
@@ -1267,7 +1300,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   group.add(ballastBed);
   walkableMeshes.push(ballastBed);
   for (const side of [-1, 1]) {
-    const ballastShoulder = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.55, 0.045, trackLength)), ballastMat);
+    const ballastShoulder = new THREE.Mesh(trackGeo(craftedBox(0.55, 0.045, trackLength)), ballastMat);
     ballastShoulder.position.set(railX + side * 1.9, 0.0225, 0);
     ballastShoulder.receiveShadow = true;
     ballastShoulder.userData.noCollide = true;
@@ -1275,7 +1308,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   }
 
   const tieCount = 190;
-  const tieGeo = trackGeo(new THREE.BoxGeometry(2.55, 0.075, 0.24));
+  const tieGeo = trackGeo(craftedBox(2.55, 0.075, 0.24));
   const tieInst = new THREE.InstancedMesh(tieGeo, woodDarkMat, tieCount);
   tieInst.receiveShadow = true;
   tieInst.userData.noCollide = true;
@@ -1293,14 +1326,14 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
   // Twin gleaming steel rails running North-South with base flanges
   for (const dx of [-0.74, 0.74]) {
-    const railBase = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.036, trackLength)), ironMat);
+    const railBase = new THREE.Mesh(trackGeo(craftedBox(0.18, 0.036, trackLength)), ironMat);
     railBase.position.set(railX + dx, 0.178, 0);
     railBase.receiveShadow = true;
     railBase.userData.noCollide = true;
     tagSurface(railBase, ironMat);
     group.add(railBase);
 
-    const rail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.1, 0.12, trackLength)), steelRailMat);
+    const rail = new THREE.Mesh(trackGeo(craftedBox(0.1, 0.12, trackLength)), steelRailMat);
     rail.position.set(railX + dx, 0.256, 0);
     rail.castShadow = true;
     rail.receiveShadow = true;
@@ -1328,13 +1361,13 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     // Upper & lower timber crossarms with diagonal iron struts & glass insulators
     for (const cy of [6.95, 6.28]) {
-      const cross = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.9, 0.13, 0.13)), woodDarkMat);
+      const cross = new THREE.Mesh(trackGeo(craftedBox(1.9, 0.13, 0.13)), woodDarkMat);
       cross.position.y = cy;
       cross.castShadow = true;
       pole.add(cross);
 
       for (const sx of [-1, 1]) {
-        const brace = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.05, 0.56, 0.05)), ironMat);
+        const brace = new THREE.Mesh(trackGeo(craftedBox(0.05, 0.56, 0.05)), ironMat);
         brace.position.set(sx * 0.26, cy - 0.22, 0.09);
         brace.rotation.z = sx * 0.78;
         pole.add(brace);
@@ -1386,22 +1419,22 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   const xBuck = new THREE.Group();
   xBuck.position.set(railX + 3.2, 0, -5.2);
   xBuck.rotation.y = Math.PI * 0.35;
-  const xPost = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 3.6, 0.18)), whiteTrimMat);
+  const xPost = new THREE.Mesh(trackGeo(craftedBox(0.18, 3.6, 0.18)), whiteTrimMat);
   xPost.position.y = 1.8;
   xPost.castShadow = true;
   xBuck.add(xPost);
   for (const ang of [0.62, -0.62]) {
-    const blade = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.75, 0.24, 0.07)), whiteTrimMat);
+    const blade = new THREE.Mesh(trackGeo(craftedBox(1.75, 0.24, 0.07)), whiteTrimMat);
     blade.position.set(0, 3.05, 0.1);
     blade.rotation.z = ang;
     blade.castShadow = true;
     xBuck.add(blade);
-    const stripe = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.62, 0.07, 0.085)), darkTrimMat);
+    const stripe = new THREE.Mesh(trackGeo(craftedBox(1.62, 0.07, 0.085)), darkTrimMat);
     stripe.position.set(0, 3.05, 0.105);
     stripe.rotation.z = ang;
     xBuck.add(stripe);
   }
-  const xPlinth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.46, 0.24, 0.46)), stoneMat);
+  const xPlinth = new THREE.Mesh(trackGeo(craftedBox(0.46, 0.24, 0.46)), stoneMat);
   xPlinth.position.y = 0.12;
   xBuck.add(xPlinth);
   group.add(xBuck);
@@ -1487,13 +1520,42 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       castShadow = true,
       parentObj: THREE.Object3D = bGroup,
     ): THREE.Mesh => {
-      const m = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(bw, bh, bd)), mat);
+      const m = new THREE.Mesh(trackGeo(craftedBox(bw, bh, bd)), mat);
       m.position.set(lx, ly, lz);
       m.castShadow = castShadow;
       m.receiveShadow = true;
       if (!collide) m.userData.noCollide = true;
       tagSurface(m, mat);
       parentObj.add(m);
+      // Raised lap boards give the facades a real silhouette and self-shadowing.
+      // The backing wall remains the uninterrupted collision / bullet surface.
+      if ((mat === woodLightMat || mat === woodDarkMat || mat === woodRedMat) &&
+          bh > 2 && Math.min(bw, bd) > 0.35 && Math.min(bw, bd) < 0.5 && Math.max(bw, bd) > 1.5) {
+        const alongX = bw > bd;
+        const span = alongX ? bw : bd;
+        const rows = Math.ceil(bh / 0.26);
+        const pitch = bh / rows;
+        for (const side of [-1, 1]) {
+          for (let row = 0; row < rows; row++) {
+            const boardGeo = trackGeo(craftedBox(alongX ? span : 0.038, pitch - 0.009, alongX ? 0.038 : span));
+            // Match the underlying wall's texture scale instead of stretching a full
+            // wall's worth of grain onto every individual board.
+            const uv = boardGeo.attributes.uv;
+            for (let i = 0; i < uv.count; i++) {
+              uv.setY(i, (uv.getY(i) * (pitch - 0.009) + row * pitch) / bh);
+            }
+            const board = new THREE.Mesh(boardGeo, mat);
+            board.position.set(lx + (alongX ? 0 : side * (bw / 2 + 0.012)),
+              ly - bh / 2 + (row + 0.5) * pitch,
+              lz + (alongX ? side * (bd / 2 + 0.012) : 0));
+            board.rotation[alongX ? 'x' : 'z'] = side * 0.035;
+            board.castShadow = true;
+            board.receiveShadow = true;
+            board.userData.noCollide = true;
+            parentObj.add(board);
+          }
+        }
+      }
       if (collide) pushLocalCollider(lx, ly, lz, bw, bh, bd);
       if (shootable) shootableMeshes.push(m);
       return m;
@@ -1519,7 +1581,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     // 1. Recessed Stone Foundation Plinth Skirt (strictly below floorH so ZERO floor Z-fighting!)
     const plinthH = floorH - 0.045;
-    const plinthSkirt = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w + 0.24, plinthH, d + 0.24)), stoneMat);
+    const plinthSkirt = new THREE.Mesh(trackGeo(craftedBox(w + 0.24, plinthH, d + 0.24)), stoneMat);
     plinthSkirt.position.set(0, plinthH * 0.5, 0);
     plinthSkirt.receiveShadow = true;
     plinthSkirt.userData.noCollide = true;
@@ -1542,7 +1604,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       const joistCount = Math.max(3, Math.floor(w / 2.2));
       for (let j = 0; j <= joistCount; j++) {
         const jx = -w / 2 + (j / joistCount) * w;
-        const joist = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.14, 0.22)), stoneMat);
+        const joist = new THREE.Mesh(trackGeo(craftedBox(0.18, 0.14, 0.22)), stoneMat);
         joist.position.set(jx, 0.07, d / 2 + porchDepth - 0.12);
         bGroup.add(joist);
       }
@@ -1571,9 +1633,9 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         const scX = sx * (doorW / 2 + 0.36);
         const scY = floorH + 2.28;
         const scZ = frontZ + wallT / 2 + 0.02;
-        const backPlate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.11, 0.28, 0.04)), ironMat);
+        const backPlate = new THREE.Mesh(trackGeo(craftedBox(0.11, 0.28, 0.04)), ironMat);
         backPlate.position.set(scX, scY, scZ);
-        const arm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.05, 0.05, 0.22)), ironMat);
+        const arm = new THREE.Mesh(trackGeo(craftedBox(0.05, 0.05, 0.22)), ironMat);
         arm.position.set(scX, scY + 0.04, scZ + 0.12);
         const lantern = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.085, 0.065, 0.22, 6)), lanternGlowMat);
         lantern.position.set(scX, scY - 0.06, scZ + 0.22);
@@ -1611,13 +1673,13 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     // Saloon swinging batwing half-doors (left slightly ajar on sides so player runs right through!)
     if (interiorTheme === 'saloon') {
-      const batL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.95, 1.35, 0.08)), woodDarkMat);
+      const batL = new THREE.Mesh(trackGeo(craftedBox(0.95, 1.35, 0.08)), woodDarkMat);
       batL.position.set(-doorW / 2 + 0.25, floorH + 1.25, frontZ + 0.38);
       batL.rotation.y = -0.95;
       batL.castShadow = true;
       batL.userData.noCollide = true;
       bGroup.add(batL);
-      const batR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.95, 1.35, 0.08)), woodDarkMat);
+      const batR = new THREE.Mesh(trackGeo(craftedBox(0.95, 1.35, 0.08)), woodDarkMat);
       batR.position.set(doorW / 2 - 0.25, floorH + 1.25, frontZ + 0.38);
       batR.rotation.y = 0.95;
       batR.castShadow = true;
@@ -1633,18 +1695,18 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       wg.userData.noCollide = true;
 
       // Dark window recess backing flush proud of wall (gives genuine architectural depth)
-      const back = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.18, 1.44, 0.03)), windowBackdropMat);
+      const back = new THREE.Mesh(trackGeo(craftedBox(1.18, 1.44, 0.03)), windowBackdropMat);
       back.position.z = 0.018;
       wg.add(back);
 
       // 4 non-overlapping sash casing bars framing the window cleanly
-      const casingTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.42, 0.12, 0.09)), postMat);
+      const casingTop = new THREE.Mesh(trackGeo(craftedBox(1.42, 0.12, 0.09)), postMat);
       casingTop.position.set(0, 0.78, 0.045);
-      const casingBot = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.42, 0.12, 0.09)), postMat);
+      const casingBot = new THREE.Mesh(trackGeo(craftedBox(1.42, 0.12, 0.09)), postMat);
       casingBot.position.set(0, -0.78, 0.045);
-      const casingL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.12, 1.44, 0.09)), postMat);
+      const casingL = new THREE.Mesh(trackGeo(craftedBox(0.12, 1.44, 0.09)), postMat);
       casingL.position.set(-0.65, 0, 0.045);
-      const casingR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.12, 1.44, 0.09)), postMat);
+      const casingR = new THREE.Mesh(trackGeo(craftedBox(0.12, 1.44, 0.09)), postMat);
       casingR.position.set(0.65, 0, 0.045);
       wg.add(casingTop, casingBot, casingL, casingR);
 
@@ -1655,28 +1717,37 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       wg.add(glass);
 
       // Non-overlapping cross muntin bars in front of glass
-      const barV = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.055, 1.42, 0.03)), postMat);
+      const barV = new THREE.Mesh(trackGeo(craftedBox(0.055, 1.42, 0.03)), postMat);
       barV.position.z = 0.078;
-      const barHL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.55, 0.055, 0.03)), postMat);
+      const barHL = new THREE.Mesh(trackGeo(craftedBox(0.55, 0.055, 0.03)), postMat);
       barHL.position.set(-0.305, 0, 0.078);
-      const barHR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.55, 0.055, 0.03)), postMat);
+      const barHR = new THREE.Mesh(trackGeo(craftedBox(0.55, 0.055, 0.03)), postMat);
       barHR.position.set(0.305, 0, 0.078);
       wg.add(barV, barHL, barHR);
 
       // Projecting wooden window sill & pediment drip cap
-      const sill = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.58, 0.11, 0.22)), darkTrimMat);
+      const sill = new THREE.Mesh(trackGeo(craftedBox(1.58, 0.11, 0.22)), darkTrimMat);
       sill.position.set(0, -0.895, 0.09);
       wg.add(sill);
-      const headerCap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.6, 0.12, 0.2)), darkTrimMat);
+      const headerCap = new THREE.Mesh(trackGeo(craftedBox(1.6, 0.12, 0.2)), darkTrimMat);
       headerCap.position.set(0, 0.9, 0.085);
       wg.add(headerCap);
 
       // Open louvered frontier wooden shutters flanking each window cleanly outside casing
       for (const sx of [-1, 1]) {
-        const shutter = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.36, 1.54, 0.055)), shutterMat);
+        const shutter = new THREE.Mesh(trackGeo(craftedBox(0.36, 1.54, 0.055)), shutterMat);
         shutter.position.set(sx * 0.91, 0, 0.04);
         shutter.castShadow = true;
         wg.add(shutter);
+        for (let slat = 0; slat < 10; slat++) {
+          const louver = new THREE.Mesh(trackGeo(craftedBox(0.3, 0.105, 0.045)), shutterMat);
+          louver.position.set(sx * 0.91, -0.64 + slat * 0.142, 0.08);
+          louver.rotation.x = -0.32;
+          louver.castShadow = true;
+          louver.receiveShadow = true;
+          louver.userData.noCollide = true;
+          wg.add(louver);
+        }
       }
       bGroup.add(wg);
     };
@@ -1845,7 +1916,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const beamCount = Math.max(3, Math.floor(d / 2.2));
     for (let bi = 1; bi < beamCount; bi++) {
       const bz = -d / 2 + wallT + (bi / beamCount) * (d - wallT * 2);
-      const beam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w - wallT * 2.04, 0.18, 0.16)), darkTrimMat);
+      const beam = new THREE.Mesh(trackGeo(craftedBox(w - wallT * 2.04, 0.18, 0.16)), darkTrimMat);
       beam.position.set(0, ceilingY - 0.22, bz);
       beam.receiveShadow = true;
       beam.userData.noCollide = true;
@@ -1855,10 +1926,10 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     // Framed Frontier Wanted Posters / Maps mounted on Interior Side Walls
     if (interiorTheme !== 'barn') {
       for (const sx of [-1, 1]) {
-        const pFrame = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.05, 0.86, 0.66)), darkTrimMat);
+        const pFrame = new THREE.Mesh(trackGeo(craftedBox(0.05, 0.86, 0.66)), darkTrimMat);
         pFrame.position.set(sx * (w / 2 - wallT - 0.03), floorH + 1.85, 0.4);
         pFrame.userData.noCollide = true;
-        const pPaper = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.03, 0.72, 0.52)), posterPaperMat);
+        const pPaper = new THREE.Mesh(trackGeo(craftedBox(0.03, 0.72, 0.52)), posterPaperMat);
         pPaper.position.set(sx * (w / 2 - wallT - 0.06), floorH + 1.85, 0.4);
         pPaper.userData.noCollide = true;
         interiorGroup.add(pFrame, pPaper);
@@ -1873,7 +1944,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       const slopeAngle = Math.atan2(peakH, w / 2 + 0.45);
 
       // Left & right pitched shingle slopes offset minutely in Z so ridge junction never flickers
-      const slopeL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(slopeLen, 0.22, d + 0.9)), roofMat);
+      const slopeL = new THREE.Mesh(trackGeo(craftedBox(slopeLen, 0.22, d + 0.9)), roofMat);
       slopeL.position.set(-(w / 4 + 0.12), roofBaseY + peakH / 2, 0);
       slopeL.rotation.z = slopeAngle;
       slopeL.castShadow = true;
@@ -1882,7 +1953,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       bGroup.add(slopeL);
       shootableMeshes.push(slopeL);
 
-      const slopeR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(slopeLen, 0.22, d + 0.89)), roofMat);
+      const slopeR = new THREE.Mesh(trackGeo(craftedBox(slopeLen, 0.22, d + 0.89)), roofMat);
       slopeR.position.set(w / 4 + 0.12, roofBaseY + peakH / 2, 0);
       slopeR.rotation.z = -slopeAngle;
       slopeR.castShadow = true;
@@ -1892,7 +1963,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       shootableMeshes.push(slopeR);
 
       // Timber ridge cap beam crowning the gable peak
-      const ridgeBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.38, 0.28, d + 1.08)), darkTrimMat);
+      const ridgeBeam = new THREE.Mesh(trackGeo(craftedBox(0.38, 0.28, d + 1.08)), darkTrimMat);
       ridgeBeam.position.set(0, roofBaseY + peakH + 0.08, 0);
       ridgeBeam.castShadow = true;
       bGroup.add(ridgeBeam);
@@ -1918,11 +1989,11 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
       // Timber bargeboard fascia trim cleanly outside slope Z ends
       for (const gz of [d / 2 + 0.51, -d / 2 - 0.51]) {
-        const bargeL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(slopeLen + 0.1, 0.25, 0.09)), darkTrimMat);
+        const bargeL = new THREE.Mesh(trackGeo(craftedBox(slopeLen + 0.1, 0.25, 0.09)), darkTrimMat);
         bargeL.position.set(-(w / 4 + 0.12), roofBaseY + peakH / 2 - 0.04, gz);
         bargeL.rotation.z = slopeAngle;
         bGroup.add(bargeL);
-        const bargeR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(slopeLen + 0.1, 0.25, 0.09)), darkTrimMat);
+        const bargeR = new THREE.Mesh(trackGeo(craftedBox(slopeLen + 0.1, 0.25, 0.09)), darkTrimMat);
         bargeR.position.set(w / 4 + 0.12, roofBaseY + peakH / 2 - 0.04, gz);
         bargeR.rotation.z = -slopeAngle;
         bGroup.add(bargeR);
@@ -1937,7 +2008,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       addPart(w + 0.44, 0.2, 0.7, 0, roofBaseY + crownH + 0.11, frontZ + 0.1, postMat, false, false, false);
       addPart(w * 0.56 + 0.34, 0.2, 0.7, 0, roofBaseY + crownH + 0.83, frontZ + 0.1, postMat, false, false, false);
       // Sloped shingle roof hidden behind false front
-      const shedRoof = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w - 0.08, 0.22, d - 0.2)), roofMat);
+      const shedRoof = new THREE.Mesh(trackGeo(craftedBox(w - 0.08, 0.22, d - 0.2)), roofMat);
       shedRoof.position.set(0, roofBaseY + 0.48, -0.2);
       shedRoof.rotation.x = 0.08;
       shedRoof.castShadow = true;
@@ -1983,7 +2054,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       // Continuous overhead porch header beam tying all posts together
       addPart(w + 0.36, 0.2, 0.22, 0, ceilingY - 0.14, porchOuterZ, postMat, false, true, true);
 
-      const braceGeo = trackGeo(new THREE.BoxGeometry(0.11, 0.62, 0.11));
+      const braceGeo = trackGeo(craftedBox(0.11, 0.62, 0.11));
       for (const px of postPositions) {
         const isCorner = Math.abs(Math.abs(px) - (w / 2 - 0.2)) < 0.05;
         const postW = isCorner ? 0.2 : 0.18;
@@ -2014,7 +2085,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       const rafterCount = Math.max(5, Math.floor(w / 1.1));
       for (let r = 0; r <= rafterCount; r++) {
         const rx = -w / 2 + 0.15 + (r / rafterCount) * (w - 0.3);
-        const rafter = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.09, 0.12, porchDepth + 0.42)), darkTrimMat);
+        const rafter = new THREE.Mesh(trackGeo(craftedBox(0.09, 0.12, porchDepth + 0.42)), darkTrimMat);
         rafter.position.set(rx, twoStory ? roofBaseY - 0.52 : ceilingY - 0.22, d / 2 + porchDepth / 2);
         rafter.rotation.x = twoStory ? 0.14 : 0.16;
         bGroup.add(rafter);
@@ -2047,7 +2118,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         const balusterCount = Math.floor(w / 0.9);
         for (let i = 0; i <= balusterCount; i++) {
           const bx = -w / 2 + (i / balusterCount) * w;
-          const bPost = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, 0.96, 0.08)), postMat);
+          const bPost = new THREE.Mesh(trackGeo(craftedBox(0.08, 0.96, 0.08)), postMat);
           bPost.position.set(bx, ceilingY + 0.52, porchOuterZ);
           bGroup.add(bPost);
         }
@@ -2056,14 +2127,14 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
           addPart(0.16, roofBaseY - ceilingY - 0.35, 0.16, ux, (roofBaseY - 0.25 + ceilingY) * 0.5, porchOuterZ, postMat, balconyWalkable, true, true);
         }
         // Upper porch awning roof over 2nd-story balcony
-        const upperCanopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w + 0.5, 0.16, porchDepth + 0.3)), roofMat);
+        const upperCanopy = new THREE.Mesh(trackGeo(craftedBox(w + 0.5, 0.16, porchDepth + 0.3)), roofMat);
         upperCanopy.position.set(0, roofBaseY - 0.4, d / 2 + porchDepth / 2);
         upperCanopy.rotation.x = 0.14;
         upperCanopy.castShadow = true;
         bGroup.add(upperCanopy);
       } else {
         // Sloped single-story porch canopy
-        const canopy = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(w + 0.5, 0.16, porchDepth + 0.35)), roofMat);
+        const canopy = new THREE.Mesh(trackGeo(craftedBox(w + 0.5, 0.16, porchDepth + 0.35)), roofMat);
         canopy.position.set(0, ceilingY - 0.12, d / 2 + porchDepth / 2);
         canopy.rotation.x = 0.16;
         canopy.castShadow = true;
@@ -2097,23 +2168,23 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
           : frontZ + wallT / 2 + 0.16;
 
       // Recessed dark timber backing frame + projecting top cornice cap + flanking iron straps
-      const frameBack = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(signW + 0.24, signH + 0.22, 0.08)), darkTrimMat);
+      const frameBack = new THREE.Mesh(trackGeo(craftedBox(signW + 0.24, signH + 0.22, 0.08)), darkTrimMat);
       frameBack.position.set(0, signY, signZ - 0.05);
       frameBack.castShadow = true;
       bGroup.add(frameBack);
 
-      const signCap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(signW + 0.38, 0.11, 0.22)), darkTrimMat);
+      const signCap = new THREE.Mesh(trackGeo(craftedBox(signW + 0.38, 0.11, 0.22)), darkTrimMat);
       signCap.position.set(0, signY + signH / 2 + 0.165, signZ + 0.01);
       bGroup.add(signCap);
 
       // Forged iron mounting straps strictly outside painted sign edges so zero overlap!
       for (const sx of [-1, 1]) {
-        const strap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, signH + 0.22, 0.14)), ironMat);
+        const strap = new THREE.Mesh(trackGeo(craftedBox(0.08, signH + 0.22, 0.14)), ironMat);
         strap.position.set(sx * (signW * 0.5 + 0.07), signY, signZ - 0.01);
         bGroup.add(strap);
       }
 
-      const signMesh = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(signW, signH, 0.06)), signMat);
+      const signMesh = new THREE.Mesh(trackGeo(craftedBox(signW, signH, 0.06)), signMat);
       signMesh.position.set(0, signY, signZ + 0.025);
       signMesh.castShadow = true;
       signMesh.receiveShadow = true;
@@ -2177,7 +2248,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       // Heavy riveted iron bank vault safe + stacked gold bullion bars!
       addPart(1.8, 2.1, 1.5, w / 2 - 1.65, floorH + 1.05, -d / 2 + 1.45, ironMat, true, true, true, interiorGroup);
       for (let g = 0; g < 3; g++) {
-        const bar = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.28, 0.1, 0.14)), goldBullionMat);
+        const bar = new THREE.Mesh(trackGeo(craftedBox(0.28, 0.1, 0.14)), goldBullionMat);
         bar.position.set(-1.1 + g * 0.34, floorH + 1.17, -0.62);
         bar.userData.noCollide = true;
         interiorGroup.add(bar);
@@ -2199,7 +2270,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     } else if (interiorTheme === 'blacksmith') {
       // Brick blacksmith forge hearth with glowing orange embers + solid chimney hood!
       addPart(2.2, 1.15, 1.5, -w / 2 + 1.75, floorH + 0.58, -d / 2 + 1.35, brickMat, true, true, true, interiorGroup);
-      const embers = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.4, 0.18, 0.9)), forgeEmberMat);
+      const embers = new THREE.Mesh(trackGeo(craftedBox(1.4, 0.18, 0.9)), forgeEmberMat);
       embers.position.set(-w / 2 + 1.75, floorH + 1.24, -d / 2 + 1.35);
       embers.userData.noCollide = true;
       interiorGroup.add(embers);
@@ -2231,7 +2302,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     // Crisp wooden corner trim boards sitting cleanly proud of exterior wall faces (ZERO wall Z-fighting!)
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        const trim = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.22, totalH, 0.22)), postMat);
+        const trim = new THREE.Mesh(trackGeo(craftedBox(0.22, totalH, 0.22)), postMat);
         trim.position.set(sx * (w / 2 + 0.03), floorH + totalH / 2, sz * (d / 2 + 0.03));
         trim.castShadow = true;
         trim.userData.noCollide = true;
@@ -2538,10 +2609,10 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const legH = 10.6;
     const spreadBot = 2.55;
     const spreadTop = 1.95;
-    const legGeo = trackGeo(new THREE.BoxGeometry(0.32, legH, 0.32));
+    const legGeo = trackGeo(craftedBox(0.32, legH, 0.32));
 
     // 4 slightly canted heavy timber support legs seated on concrete/stone footing piers
-    const pierGeo = trackGeo(new THREE.BoxGeometry(0.72, 0.56, 0.72));
+    const pierGeo = trackGeo(craftedBox(0.72, 0.56, 0.72));
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         const pier = new THREE.Mesh(pierGeo, stoneMat);
@@ -2573,22 +2644,22 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
       // Horizontal girt beams at top of tier + non-overlapping offset X-braces (zero Z-fighting at crossing!)
       for (const sz of [-1, 1]) {
-        const beam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(spanTop, 0.22, 0.22)), woodDarkMat);
+        const beam = new THREE.Mesh(trackGeo(craftedBox(spanTop, 0.22, 0.22)), woodDarkMat);
         beam.position.set(0, y1, sz * (spanTop / 2));
         tower.add(beam);
         for (const dir of [-1, 1]) {
-          const strut = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.13, diagLen, 0.13)), woodLightMat);
+          const strut = new THREE.Mesh(trackGeo(craftedBox(0.13, diagLen, 0.13)), woodLightMat);
           strut.position.set(0, ym, sz * (spanMid / 2) + dir * 0.065);
           strut.rotation.z = dir * diagAng;
           tower.add(strut);
         }
       }
       for (const sx of [-1, 1]) {
-        const beam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.22, 0.22, spanTop - 0.24)), woodDarkMat);
+        const beam = new THREE.Mesh(trackGeo(craftedBox(0.22, 0.22, spanTop - 0.24)), woodDarkMat);
         beam.position.set(sx * (spanTop / 2), y1, 0);
         tower.add(beam);
         for (const dir of [-1, 1]) {
-          const strut = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.13, diagLen, 0.13)), woodLightMat);
+          const strut = new THREE.Mesh(trackGeo(craftedBox(0.13, diagLen, 0.13)), woodLightMat);
           strut.position.set(sx * (spanMid / 2) + dir * 0.065, ym, 0);
           strut.rotation.x = dir * diagAng;
           tower.add(strut);
@@ -2598,14 +2669,14 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     // Wooden maintenance access ladder climbing up the south face
     for (const lx of [-0.28, 0.28]) {
-      const rail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, legH + 0.4, 0.08)), woodDarkMat);
+      const rail = new THREE.Mesh(trackGeo(craftedBox(0.08, legH + 0.4, 0.08)), woodDarkMat);
       rail.position.set(lx, legH / 2 + 0.1, (spreadBot + spreadTop) * 0.5 + 0.18);
       rail.rotation.x = -0.055;
       tower.add(rail);
     }
     for (let ry = 0.6; ry <= legH; ry += 0.46) {
       const rz = THREE.MathUtils.lerp(spreadBot, spreadTop, ry / legH) + 0.2;
-      const rung = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.62, 0.05, 0.05)), woodLightMat);
+      const rung = new THREE.Mesh(trackGeo(craftedBox(0.62, 0.05, 0.05)), woodLightMat);
       rung.position.set(0, ry, rz);
       tower.add(rung);
     }
@@ -2636,7 +2707,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     spout.rotation.z = 0.72;
     spout.castShadow = true;
     tower.add(spout);
-    const pulleyArm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.1, 0.12, 0.12)), woodDarkMat);
+    const pulleyArm = new THREE.Mesh(trackGeo(craftedBox(1.1, 0.12, 0.12)), woodDarkMat);
     pulleyArm.position.set(-2.35, legH + 3.5, 0);
     tower.add(pulleyArm);
     const chainRod = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.02, 0.02, 1.5, 6)), ironMat);
@@ -2688,11 +2759,11 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const top = 0.48;
     const legLen = Math.hypot(bot - top, h);
     const tilt = Math.atan2(bot - top, h);
-    const legGeo = trackGeo(new THREE.BoxGeometry(0.18, legLen, 0.18));
+    const legGeo = trackGeo(craftedBox(0.18, legLen, 0.18));
 
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
-        const pier = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.44, 0.36, 0.44)), stoneMat);
+        const pier = new THREE.Mesh(trackGeo(craftedBox(0.44, 0.36, 0.44)), stoneMat);
         pier.position.set(sx * bot, 0.18, sz * bot);
         mill.add(pier);
 
@@ -2709,19 +2780,19 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     for (const ty of [2.6, 5.4, 8.2, 10.6]) {
       const span = THREE.MathUtils.lerp(bot * 2, top * 2, ty / h);
       for (const sz of [-1, 1]) {
-        const girt = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(span, 0.13, 0.13)), woodLightMat);
+        const girt = new THREE.Mesh(trackGeo(craftedBox(span, 0.13, 0.13)), woodLightMat);
         girt.position.set(0, ty, sz * (span * 0.5));
         mill.add(girt);
       }
       for (const sx of [-1, 1]) {
-        const girt = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.13, 0.13, span)), woodLightMat);
+        const girt = new THREE.Mesh(trackGeo(craftedBox(0.13, 0.13, span)), woodLightMat);
         girt.position.set(sx * (span * 0.5), ty, 0);
         mill.add(girt);
       }
     }
 
     // Service deck & vertical steel pump rod
-    const plat = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.5, 0.16, 1.5)), woodFloorMat);
+    const plat = new THREE.Mesh(trackGeo(craftedBox(1.5, 0.16, 1.5)), woodFloorMat);
     plat.position.y = h - 0.6;
     mill.add(plat);
     const pumpRod = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.05, 0.06, h + 0.6, 6)), ironMat);
@@ -2732,7 +2803,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const headGroup = new THREE.Group();
     headGroup.position.set(0, h + 0.45, 0);
     headGroup.rotation.y = 0.55;
-    const gearbox = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.45, 0.42, 0.72)), ironMat);
+    const gearbox = new THREE.Mesh(trackGeo(craftedBox(0.45, 0.42, 0.72)), ironMat);
     headGroup.add(gearbox);
 
     const wheelGroup = new THREE.Group();
@@ -2740,7 +2811,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const wheelRingOuter = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(1.82, 0.035, 6, 20)), ironMat);
     const wheelRingInner = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.88, 0.025, 6, 16)), ironMat);
     wheelGroup.add(wheelRingOuter, wheelRingInner);
-    const bladeGeo = trackGeo(new THREE.BoxGeometry(0.32, 1.25, 0.025));
+    const bladeGeo = trackGeo(craftedBox(0.32, 1.25, 0.025));
     for (let i = 0; i < 12; i++) {
       const a = (i / 12) * Math.PI * 2;
       const blade = new THREE.Mesh(bladeGeo, steelRailMat);
@@ -2753,10 +2824,10 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     headGroup.add(wheelGroup);
     animatedProps.windmillWheel = wheelGroup;
 
-    const tailBoom = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, 0.08, 2.3)), ironMat);
+    const tailBoom = new THREE.Mesh(trackGeo(craftedBox(0.08, 0.08, 2.3)), ironMat);
     tailBoom.position.set(0, 0, -1.45);
     headGroup.add(tailBoom);
-    const tailVane = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.04, 1.05, 1.15)), woodRedMat);
+    const tailVane = new THREE.Mesh(trackGeo(craftedBox(0.04, 1.05, 1.15)), woodRedMat);
     tailVane.position.set(0, 0.08, -2.45);
     tailVane.castShadow = true;
     headGroup.add(tailVane);
@@ -2790,7 +2861,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         gate.position.set(mx, 0, mz);
         gate.rotation.y = ang + Math.PI / 2;
         for (const gx of [-1.7, 1.7]) {
-          const gp = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.24, 3.2, 0.24)), woodDarkMat);
+          const gp = new THREE.Mesh(trackGeo(craftedBox(0.24, 3.2, 0.24)), woodDarkMat);
           gp.position.set(gx, 1.6, 0);
           gp.castShadow = true;
           tagSurface(gp, woodDarkMat);
@@ -2808,7 +2879,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
             maxZ: gwz + 0.22,
           });
         }
-        const header = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.8, 0.26, 0.24)), woodDarkMat);
+        const header = new THREE.Mesh(trackGeo(craftedBox(3.8, 0.26, 0.24)), woodDarkMat);
         header.position.y = 3.15;
         gate.add(header);
         group.add(gate);
@@ -2822,13 +2893,13 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
       // Fence posts & 3 horizontal weathered plank rails (offset slightly proud of posts -> zero Z-fighting!)
       for (const px of [-segLen / 2, 0, segLen / 2]) {
-        const post = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 1.75, 0.18)), woodDarkMat);
+        const post = new THREE.Mesh(trackGeo(craftedBox(0.18, 1.75, 0.18)), woodDarkMat);
         post.position.set(px, 0.875, 0);
         post.castShadow = true;
         panel.add(post);
       }
       for (const ry of [0.45, 0.95, 1.45]) {
-        const rail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(segLen, 0.22, 0.08)), woodLightMat);
+        const rail = new THREE.Mesh(trackGeo(craftedBox(segLen, 0.22, 0.08)), woodLightMat);
         rail.position.set(0, ry, 0.13);
         rail.castShadow = true;
         rail.receiveShadow = true;
@@ -2870,16 +2941,16 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     wagon.rotation.y = rotY;
 
     // Under-chassis timber axles & kingpin beam
-    const axleR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.16, 2.1)), woodDarkMat);
+    const axleR = new THREE.Mesh(trackGeo(craftedBox(0.18, 0.16, 2.1)), woodDarkMat);
     axleR.position.set(-1.35, 0.72, 0);
-    const axleF = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 0.16, 2.1)), woodDarkMat);
+    const axleF = new THREE.Mesh(trackGeo(craftedBox(0.18, 0.16, 2.1)), woodDarkMat);
     axleF.position.set(1.35, 0.62, 0);
-    const reachBeam = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.2, 0.14, 0.16)), woodDarkMat);
+    const reachBeam = new THREE.Mesh(trackGeo(craftedBox(3.2, 0.14, 0.16)), woodDarkMat);
     reachBeam.position.set(0, 0.68, 0);
     wagon.add(axleR, axleF, reachBeam);
 
     // Wooden wagon bed, recessed floor, iron side straps & external oak rib stakes
-    const bed = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(4.2, 0.92, 1.85)), woodDarkMat);
+    const bed = new THREE.Mesh(trackGeo(craftedBox(4.2, 0.92, 1.85)), woodDarkMat);
     bed.position.y = 1.18;
     bed.castShadow = true;
     bed.receiveShadow = true;
@@ -2888,24 +2959,24 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     for (const sx of [-1.85, -0.92, 0, 0.92, 1.85]) {
       for (const sz of [-0.95, 0.95]) {
-        const stake = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.09, 0.96, 0.06)), woodLightMat);
+        const stake = new THREE.Mesh(trackGeo(craftedBox(0.09, 0.96, 0.06)), woodLightMat);
         stake.position.set(sx, 1.2, sz);
         wagon.add(stake);
       }
     }
     for (const sz of [-0.94, 0.94]) {
-      const rubRail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(4.24, 0.08, 0.06)), ironMat);
+      const rubRail = new THREE.Mesh(trackGeo(craftedBox(4.24, 0.08, 0.06)), ironMat);
       rubRail.position.set(0, 1.62, sz);
       wagon.add(rubRail);
     }
 
     // Driver seat bench, angled footboard, front hitch tongue & wooden doubletree yoke
-    const seat = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.45, 0.16, 1.82)), woodLightMat);
+    const seat = new THREE.Mesh(trackGeo(craftedBox(0.45, 0.16, 1.82)), woodLightMat);
     seat.position.set(1.78, 1.76, 0);
     seat.castShadow = true;
     wagon.add(seat);
 
-    const footboard = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.48, 0.09, 1.72)), woodDarkMat);
+    const footboard = new THREE.Mesh(trackGeo(craftedBox(0.48, 0.09, 1.72)), woodDarkMat);
     footboard.position.set(2.26, 1.22, 0);
     footboard.rotation.z = -0.35;
     wagon.add(footboard);
@@ -2916,12 +2987,12 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     hitchTongue.castShadow = true;
     wagon.add(hitchTongue);
 
-    const doubletree = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.11, 0.09, 1.55)), woodLightMat);
+    const doubletree = new THREE.Mesh(trackGeo(craftedBox(0.11, 0.09, 1.55)), woodLightMat);
     doubletree.position.set(2.45, 0.54, 0);
     wagon.add(doubletree);
 
     // Interior cargo boxes visible inside the rear open hoop
-    const cargoCrate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.85, 0.72, 0.85)), crateMat);
+    const cargoCrate = new THREE.Mesh(trackGeo(craftedBox(0.85, 0.72, 0.85)), crateMat);
     cargoCrate.position.set(-1.3, 1.72, 0.25);
     cargoCrate.rotation.y = 0.18;
     wagon.add(cargoCrate);
@@ -2987,11 +3058,11 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   const buildFlagpole = (x: number, z: number) => {
     const fg = new THREE.Group();
     fg.position.set(x, 0, z);
-    const plinth = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(3.2, 0.32, 3.2)), stoneMat);
+    const plinth = new THREE.Mesh(trackGeo(craftedBox(3.2, 0.32, 3.2)), stoneMat);
     plinth.position.y = 0.16;
     plinth.receiveShadow = true;
     fg.add(plinth);
-    const plinthTop = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.9, 0.22, 1.9)), stoneMat);
+    const plinthTop = new THREE.Mesh(trackGeo(craftedBox(1.9, 0.22, 1.9)), stoneMat);
     plinthTop.position.y = 0.43;
     plinthTop.castShadow = true;
     plinthTop.receiveShadow = true;
@@ -3011,7 +3082,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
 
     const flagPivot = new THREE.Group();
     flagPivot.position.set(0.05, 8.45, 0);
-    const flag = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.1, 1.1, 0.05)), woodRedMat);
+    const flag = new THREE.Mesh(trackGeo(craftedBox(2.1, 1.1, 0.05)), woodRedMat);
     flag.position.set(1.05, 0, 0);
     flag.castShadow = true;
     flag.userData.noCollide = true;
@@ -3040,29 +3111,29 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     tr.position.set(x, 0, z);
     tr.rotation.y = rotY;
     // 4 non-overlapping timber trough walls + recessed bottom (ZERO corner Z-fighting!)
-    const wallF = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.12, 0.66, 0.12)), woodDarkMat);
+    const wallF = new THREE.Mesh(trackGeo(craftedBox(2.12, 0.66, 0.12)), woodDarkMat);
     wallF.position.set(0, 0.42, 0.42);
     wallF.castShadow = true;
     wallF.receiveShadow = true;
-    const wallB = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.12, 0.66, 0.12)), woodDarkMat);
+    const wallB = new THREE.Mesh(trackGeo(craftedBox(2.12, 0.66, 0.12)), woodDarkMat);
     wallB.position.set(0, 0.42, -0.42);
     wallB.castShadow = true;
-    const wallL = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.12, 0.66, 0.96)), woodDarkMat);
+    const wallL = new THREE.Mesh(trackGeo(craftedBox(0.12, 0.66, 0.96)), woodDarkMat);
     wallL.position.set(-1.12, 0.42, 0);
     wallL.castShadow = true;
-    const wallR = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.12, 0.66, 0.96)), woodDarkMat);
+    const wallR = new THREE.Mesh(trackGeo(craftedBox(0.12, 0.66, 0.96)), woodDarkMat);
     wallR.position.set(1.12, 0.42, 0);
     wallR.castShadow = true;
-    const floor = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(2.12, 0.1, 0.72)), woodDarkMat);
+    const floor = new THREE.Mesh(trackGeo(craftedBox(2.12, 0.1, 0.72)), woodDarkMat);
     floor.position.set(0, 0.18, 0);
     tr.add(wallF, wallB, wallL, wallR, floor);
 
     // Timber skid feet + iron reinforcement end bands
     for (const sx of [-0.95, 0.95]) {
-      const skid = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.22, 0.14, 1.02)), darkTrimMat);
+      const skid = new THREE.Mesh(trackGeo(craftedBox(0.22, 0.14, 1.02)), darkTrimMat);
       skid.position.set(sx, 0.07, 0);
       tr.add(skid);
-      const strap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.06, 0.69, 1.0)), ironMat);
+      const strap = new THREE.Mesh(trackGeo(craftedBox(0.06, 0.69, 1.0)), ironMat);
       strap.position.set(sx * 1.18, 0.42, 0);
       tr.add(strap);
     }
@@ -3098,21 +3169,21 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     const bench = new THREE.Group();
     bench.position.set(x, y, z);
     bench.rotation.y = rotY;
-    const seat = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.7, 0.08, 0.46)), woodLightMat);
+    const seat = new THREE.Mesh(trackGeo(craftedBox(1.7, 0.08, 0.46)), woodLightMat);
     seat.position.set(0, 0.46, 0);
     seat.castShadow = true;
     tagSurface(seat, woodLightMat);
-    const back = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(1.7, 0.34, 0.07)), woodLightMat);
+    const back = new THREE.Mesh(trackGeo(craftedBox(1.7, 0.34, 0.07)), woodLightMat);
     back.position.set(0, 0.76, -0.2);
     back.rotation.x = -0.14;
     back.castShadow = true;
     tagSurface(back, woodLightMat);
     bench.add(seat, back);
     for (const lx of [-0.72, 0.72]) {
-      const leg = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.1, 0.44, 0.42)), woodDarkMat);
+      const leg = new THREE.Mesh(trackGeo(craftedBox(0.1, 0.44, 0.42)), woodDarkMat);
       leg.position.set(lx, 0.22, 0);
       bench.add(leg);
-      const post = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.08, 0.46, 0.08)), woodDarkMat);
+      const post = new THREE.Mesh(trackGeo(craftedBox(0.08, 0.46, 0.08)), woodDarkMat);
       post.position.set(lx, 0.68, -0.2);
       bench.add(post);
     }
@@ -3171,7 +3242,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   const addDirectionSignpost = (x: number, z: number) => {
     const sp = new THREE.Group();
     sp.position.set(x, 0, z);
-    const post = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.17, 3.1, 0.17)), woodDarkMat);
+    const post = new THREE.Mesh(trackGeo(craftedBox(0.17, 3.1, 0.17)), woodDarkMat);
     post.position.y = 1.55;
     post.castShadow = true;
     sp.add(post);
@@ -3184,7 +3255,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       [1.98, 2.75, 1.1],
     ];
     for (const [ay, rot, len] of arms) {
-      const arm = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(len, 0.22, 0.06)), woodLightMat);
+      const arm = new THREE.Mesh(trackGeo(craftedBox(len, 0.22, 0.06)), woodLightMat);
       arm.position.set(Math.cos(rot) * (len * 0.38), ay, -Math.sin(rot) * (len * 0.38));
       arm.rotation.y = rot;
       arm.castShadow = true;
@@ -3321,7 +3392,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       const mz = (sz + ez) * 0.5;
       const segLen = Math.hypot(ex - sx, ez - sz);
 
-      const post = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 1.42, 0.18)), woodDarkMat);
+      const post = new THREE.Mesh(trackGeo(craftedBox(0.18, 1.42, 0.18)), woodDarkMat);
       post.position.set(sx, 0.71, sz);
       post.castShadow = true;
       group.add(post);
@@ -3330,7 +3401,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       railGroup.position.set(mx, 0, mz);
       railGroup.rotation.y = ang + Math.PI / 2;
       for (const ry of [0.52, 1.08]) {
-        const rail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(segLen, 0.14, 0.07)), woodLightMat);
+        const rail = new THREE.Mesh(trackGeo(craftedBox(segLen, 0.14, 0.07)), woodLightMat);
         rail.position.set(0, ry, 0.11);
         rail.castShadow = true;
         rail.receiveShadow = true;
@@ -3338,7 +3409,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       }
       group.add(railGroup);
     }
-    const endPost = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.18, 1.42, 0.18)), woodDarkMat);
+    const endPost = new THREE.Mesh(trackGeo(craftedBox(0.18, 1.42, 0.18)), woodDarkMat);
     endPost.position.set(x1, 0.71, z1);
     endPost.castShadow = true;
     group.add(endPost);
@@ -3498,6 +3569,15 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     new THREE.Vector3(11.2, 0.85, -11.5), // Inside General Store
   ];
 
+  const protectedObjects = new Set<THREE.Object3D>([
+    ...shootableMeshes, ...walkableMeshes, ...occludables.map(spec => spec.object),
+  ]);
+  const animatedRoots = new Set<THREE.Object3D>(animatedProps.tumbleweeds.map(item => item.mesh));
+  if (animatedProps.windmillWheel) animatedRoots.add(animatedProps.windmillWheel);
+  if (animatedProps.flagMesh) animatedRoots.add(animatedProps.flagMesh);
+  const batching = batchDecoration(group, protectedObjects, animatedRoots, geometries);
+  group.userData.decorationBatching = batching;
+
   return {
     mapName: 'WEST',
     group,
@@ -3512,6 +3592,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     arenaHalfSize: 48,
     bounds,
     animatedProps,
+    optimizeRendering: () => optimizeStaticArena(group, occludables.map(spec => spec.object), animatedRoots, geometries),
     dispose: () => {
       geometries.forEach((g) => g.dispose());
       materials.forEach((m) => m.dispose());

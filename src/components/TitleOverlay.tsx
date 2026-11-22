@@ -8,6 +8,7 @@ import {
   MapId,
   MissionConfig,
 } from '../game/types';
+import { GraphicsSettings } from './GraphicsSettings';
 
 interface TitleOverlayProps {
   bestScore: number;
@@ -17,6 +18,7 @@ interface TitleOverlayProps {
   onStartMission: (config: MissionConfig) => void;
   onSensitivityChange: (val: number) => void;
   onToggleMute: () => void;
+  onSettingsChange: (patch: Partial<GameSettings>) => void;
 }
 
 type HomeView = 'home' | 'setup' | 'settings';
@@ -32,6 +34,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   onStartMission,
   onSensitivityChange,
   onToggleMute,
+  onSettingsChange,
 }) => {
   const [view, setView] = useState<HomeView>('home');
   const [difficulty, setDifficulty] = useState<DifficultyId>(initialDifficulty);
@@ -331,6 +334,8 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
                   <span>{settings.muted ? 'Muted' : 'Enabled'}</span>
                 </button>
               </div>
+
+              <GraphicsSettings settings={settings} onChange={onSettingsChange} />
             </div>
 
             <button

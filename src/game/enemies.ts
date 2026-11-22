@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { craftedBox } from './geometry';
 import { ProceduralTextures } from './textures';
 
 export type EnemyKind = 'striker' | 'sentinel' | 'wasp';
@@ -52,6 +53,9 @@ const WASP_CALLSIGNS = ['MQ-7 UAV', 'Recon-9', 'Hornet UAV', 'Talon-2'];
 
 export class EnemyFactory {
   private readonly geometries: THREE.BufferGeometry[] = [];
+  private readonly geometryCache = new Map<string, THREE.BufferGeometry>();
+  private readonly templates = new Map<EnemyKind, EnemyEntity>();
+  private readonly templateNodes = new Map<EnemyKind, THREE.Object3D[]>();
   private readonly sharedContactMat: THREE.MeshBasicMaterial;
   private readonly sharedFlashMat: THREE.MeshBasicMaterial;
   private readonly textures: ProceduralTextures;
@@ -77,6 +81,16 @@ export class EnemyFactory {
   }
 
   private trackGeo<T extends THREE.BufferGeometry>(g: T): T {
+    const parameters = (g as THREE.BufferGeometry & { parameters?: unknown }).parameters;
+    if (parameters) {
+      const key = `${g.type}:${JSON.stringify(parameters)}`;
+      const cached = this.geometryCache.get(key);
+      if (cached) {
+        g.dispose();
+        return cached as T;
+      }
+      this.geometryCache.set(key, g);
+    }
     this.geometries.push(g);
     return g;
   }
@@ -104,7 +118,7 @@ export class EnemyFactory {
 
     // Side cargo pocket detail on thigh
     const pocket = new THREE.Mesh(
-      this.trackGeo(new THREE.BoxGeometry(0.045 * scale, 0.14 * scale, 0.12 * scale)),
+      this.trackGeo(craftedBox(0.045 * scale, 0.14 * scale, 0.12 * scale)),
       pantsMat,
     );
     pocket.position.set(0.075 * scale, -0.21 * scale, 0);
@@ -142,7 +156,7 @@ export class EnemyFactory {
     knee.add(bootAnkle);
 
     const bootFoot = new THREE.Mesh(
-      this.trackGeo(new THREE.BoxGeometry(0.135 * scale, 0.095 * scale, 0.27 * scale)),
+      this.trackGeo(craftedBox(0.135 * scale, 0.095 * scale, 0.27 * scale)),
       bootMat,
     );
     bootFoot.position.set(0, -0.425 * scale, 0.058 * scale);
@@ -163,14 +177,14 @@ export class EnemyFactory {
 
     const receiverLen = heavy ? 0.52 : 0.36;
     const receiver = new THREE.Mesh(
-      this.trackGeo(new THREE.BoxGeometry(heavy ? 0.085 : 0.058, heavy ? 0.115 : 0.082, receiverLen)),
+      this.trackGeo(craftedBox(heavy ? 0.085 : 0.058, heavy ? 0.115 : 0.082, receiverLen)),
       gunMetalMat,
     );
     rifle.add(receiver);
 
     // Handguard / shroud
     const handguard = new THREE.Mesh(
-      this.trackGeo(new THREE.BoxGeometry(heavy ? 0.072 : 0.052, heavy ? 0.078 : 0.062, heavy ? 0.36 : 0.28)),
+      this.trackGeo(craftedBox(heavy ? 0.072 : 0.052, heavy ? 0.078 : 0.062, heavy ? 0.36 : 0.28)),
       polymerMat,
     );
     handguard.position.set(0, 0.008, receiverLen * 0.5 + (heavy ? 0.16 : 0.12));
@@ -189,7 +203,7 @@ export class EnemyFactory {
 
     // Buttstock resting firmly into operator's right shoulder
     const stock = new THREE.Mesh(
-      this.trackGeo(new THREE.BoxGeometry(0.044, 0.1, 0.24)),
+      this.trackGeo(craftedBox(0.044, 0.1, 0.24)),
       polymerMat,
     );
     stock.position.set(0, -0.014, -receiverLen * 0.5 - 0.11);
@@ -197,18 +211,18 @@ export class EnemyFactory {
 
     // Magazine (curved rifle mag or heavy LMG box drum)
     if (heavy) {
-      const drum = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.14, 0.14, 0.12)), polymerMat);
+      const drum = new THREE.Mesh(this.trackGeo(craftedBox(0.14, 0.14, 0.12)), polymerMat);
       drum.position.set(0, -0.1, 0.04);
       rifle.add(drum);
     } else {
-      const mag = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.036, 0.16, 0.07)), polymerMat);
+      const mag = new THREE.Mesh(this.trackGeo(craftedBox(0.036, 0.16, 0.07)), polymerMat);
       mag.position.set(0, -0.1, 0.06);
       mag.rotation.x = 0.18;
       rifle.add(mag);
     }
 
     // Top holographic sight
-    const optic = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.046, 0.052, 0.09)), gunMetalMat);
+    const optic = new THREE.Mesh(this.trackGeo(craftedBox(0.046, 0.052, 0.09)), gunMetalMat);
     optic.position.set(0, heavy ? 0.08 : 0.065, 0.02);
     rifle.add(optic);
 
@@ -222,7 +236,63 @@ export class EnemyFactory {
     return { rifle, muzzleFlash: flash, muzzleZ };
   }
 
+  private getTemplate(kind: EnemyKind): EnemyEntity {
+    let template = this.templates.get(kind);
+    if (!template) {
+      template = this.buildTemplate(kind, new THREE.Vector3(), 1);
+      this.templates.set(kind, template);
+      const nodes: THREE.Object3D[] = [];
+      template.root.traverse(object => nodes.push(object));
+      this.templateNodes.set(kind, nodes);
+    }
+    return template;
+  }
+
+  /** Keep compiled template materials alive across waves to avoid shader rebuilds. */
+  public createWarmupGroup(): THREE.Group {
+    const group = new THREE.Group();
+    for (const kind of ['striker', 'sentinel', 'wasp'] as EnemyKind[]) group.add(this.getTemplate(kind).root);
+    return group;
+  }
+
   public createEnemy(kind: EnemyKind, spawnPos: THREE.Vector3, waveScale: number): EnemyEntity {
+    const template = this.getTemplate(kind);
+    const id = this.nextId++;
+    const root = template.root.clone(true);
+    root.position.copy(spawnPos);
+    const nodeMap = new Map<THREE.Object3D, THREE.Object3D>();
+    const originalNodes = this.templateNodes.get(kind)!;
+    let nodeIndex = 0;
+    root.traverse(object => nodeMap.set(originalNodes[nodeIndex++], object));
+    const bodyMaterials = template.bodyMaterials.map(material => material.clone());
+    const coreMaterial = template.coreMaterial.clone();
+    const materialMap = new Map<THREE.Material, THREE.Material>();
+    template.bodyMaterials.forEach((material, index) => materialMap.set(material, bodyMaterials[index]));
+    materialMap.set(template.coreMaterial, coreMaterial);
+    root.traverse(object => {
+      if (!(object instanceof THREE.Mesh) || Array.isArray(object.material)) return;
+      object.material = materialMap.get(object.material) ?? object.material;
+      if (object.userData.enemyId !== undefined) object.userData.enemyId = id;
+    });
+    const mapped = <T extends THREE.Object3D>(object?: T): T | undefined => object ? nodeMap.get(object) as T : undefined;
+    const hp = Math.round(template.maxHp * waveScale);
+    const names = kind === 'striker' ? STRIKER_CALLSIGNS : kind === 'sentinel' ? SENTINEL_CALLSIGNS : WASP_CALLSIGNS;
+    return {
+      ...template, id, displayName: names[(id - 1) % names.length], root,
+      hitMeshes: template.hitMeshes.map(object => nodeMap.get(object)!),
+      bodyMaterials, coreMaterial, hp, maxHp: hp,
+      torsoGroup: mapped(template.torsoGroup), headGroup: mapped(template.headGroup),
+      weaponGroup: mapped(template.weaponGroup), muzzleFlash: mapped(template.muzzleFlash),
+      leftLeg: mapped(template.leftLeg), leftKnee: mapped(template.leftKnee),
+      rightLeg: mapped(template.rightLeg), rightKnee: mapped(template.rightKnee),
+      rotors: template.rotors?.map(object => nodeMap.get(object)!),
+      muzzleOffset: template.muzzleOffset.clone(), deathTiltAxis: template.deathTiltAxis.clone(),
+      stridePhase: Math.random() * Math.PI * 2, strafeDir: Math.random() < 0.5 ? -1 : 1,
+      fireCooldown: template.fireCooldown + Math.random() * 0.5,
+    };
+  }
+
+  private buildTemplate(kind: EnemyKind, spawnPos: THREE.Vector3, waveScale: number): EnemyEntity {
     const id = this.nextId++;
     const root = new THREE.Group();
     root.position.copy(spawnPos);
@@ -265,6 +335,8 @@ export class EnemyFactory {
       });
       const pantsMat = makeMat({
         map: this.textures.tacticalSleeveColor,
+        bumpMap: this.textures.tacticalSleeveBump,
+        bumpScale: 0.003,
         color: heavy ? 0x2d3236 : 0x3a3d40,
         roughness: 0.92,
         metalness: 0.04,
@@ -289,18 +361,26 @@ export class EnemyFactory {
       });
       const helmetMat = makeMat({
         map: this.textures.gunMetalColor,
+        normalMap: this.textures.gunMetalNormal,
+        normalScale: new THREE.Vector2(0.32, 0.32),
         roughnessMap: this.textures.gunMetalRoughness,
         color: heavy ? 0x313834 : 0x34383b,
         roughness: 0.62,
         metalness: 0.34,
       });
       const balaclavaMat = makeMat({
+        map: this.textures.tacticalGloveColor,
+        normalMap: this.textures.tacticalGloveNormal,
+        normalScale: new THREE.Vector2(0.4, 0.4),
         color: 0x202226,
         roughness: 0.94,
         metalness: 0.02,
       });
       const gunMetalMat = makeMat({
         map: this.textures.gunMetalColor,
+        normalMap: this.textures.gunMetalNormal,
+        roughnessMap: this.textures.gunMetalRoughness,
+        normalScale: new THREE.Vector2(0.5, 0.5),
         color: 0x2a2e34,
         roughness: 0.44,
         metalness: 0.82,
@@ -355,7 +435,7 @@ export class EnemyFactory {
 
       for (const sx of [-0.21, 0.21]) {
         const hipPouch = new THREE.Mesh(
-          this.trackGeo(new THREE.BoxGeometry(0.08 * scale, 0.13 * scale, 0.11 * scale)),
+          this.trackGeo(craftedBox(0.08 * scale, 0.13 * scale, 0.11 * scale)),
           gearAccentMat,
         );
         hipPouch.position.set(sx * scale, 0.1 * scale, 0.02);
@@ -374,7 +454,7 @@ export class EnemyFactory {
 
       // Ballistic MOLLE Plate Carrier Vest (Front + Back plates + 3 mag pouches + shoulder straps)
       const frontPlate = new THREE.Mesh(
-        this.trackGeo(new THREE.BoxGeometry((heavy ? 0.42 : 0.34) * scale, 0.37 * scale, 0.095 * scale)),
+        this.trackGeo(craftedBox((heavy ? 0.42 : 0.34) * scale, 0.37 * scale, 0.095 * scale)),
         vestMat,
       );
       frontPlate.position.set(0, 0.41 * scale, 0.145 * scale);
@@ -382,7 +462,7 @@ export class EnemyFactory {
       torsoGroup.add(frontPlate);
 
       const backPlate = new THREE.Mesh(
-        this.trackGeo(new THREE.BoxGeometry((heavy ? 0.4 : 0.32) * scale, 0.39 * scale, 0.1 * scale)),
+        this.trackGeo(craftedBox((heavy ? 0.4 : 0.32) * scale, 0.39 * scale, 0.1 * scale)),
         vestMat,
       );
       backPlate.position.set(0, 0.41 * scale, -0.145 * scale);
@@ -392,7 +472,7 @@ export class EnemyFactory {
       // Front triple rifle magazine pouches
       for (const mx of [-0.095, 0, 0.095]) {
         const magPouch = new THREE.Mesh(
-          this.trackGeo(new THREE.BoxGeometry(0.068 * scale, 0.135 * scale, 0.055 * scale)),
+          this.trackGeo(craftedBox(0.068 * scale, 0.135 * scale, 0.055 * scale)),
           gearAccentMat,
         );
         magPouch.position.set(mx * scale, 0.29 * scale, 0.2 * scale);
@@ -401,7 +481,7 @@ export class EnemyFactory {
 
       // Tactical hydration / radio backpack on back plate
       const pack = new THREE.Mesh(
-        this.trackGeo(new THREE.BoxGeometry(0.24 * scale, 0.32 * scale, 0.11 * scale)),
+        this.trackGeo(craftedBox(0.24 * scale, 0.32 * scale, 0.11 * scale)),
         gearAccentMat,
       );
       pack.position.set(0, 0.42 * scale, -0.22 * scale);
@@ -463,7 +543,7 @@ export class EnemyFactory {
 
       // Helmet NVG front mount shroud + tactical comms ear cups
       const nvgMount = new THREE.Mesh(
-        this.trackGeo(new THREE.BoxGeometry(0.055 * scale, 0.052 * scale, 0.032 * scale)),
+        this.trackGeo(craftedBox(0.055 * scale, 0.052 * scale, 0.032 * scale)),
         bootMat,
       );
       nvgMount.position.set(0, 0.235 * scale, 0.132 * scale);
@@ -481,7 +561,7 @@ export class EnemyFactory {
 
       // Ballistic Goggles / Visor lens (subtle tinted military lens, glows warmly during firing telegraph)
       const goggles = new THREE.Mesh(
-        this.trackGeo(new THREE.BoxGeometry((heavy ? 0.185 : 0.165) * scale, (heavy ? 0.072 : 0.054) * scale, 0.042 * scale)),
+        this.trackGeo(craftedBox((heavy ? 0.185 : 0.165) * scale, (heavy ? 0.072 : 0.054) * scale, 0.042 * scale)),
         coreMaterial,
       );
       goggles.position.set(0, 0.165 * scale, 0.108 * scale);
@@ -628,11 +708,11 @@ export class EnemyFactory {
     root.add(bodyGroup);
 
     // Sleek central military avionics fuselage
-    const hull = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.46, 0.18, 0.66)), droneBodyMat);
+    const hull = new THREE.Mesh(this.trackGeo(craftedBox(0.46, 0.18, 0.66)), droneBodyMat);
     tagHit(hull, false);
     bodyGroup.add(hull);
 
-    const topCanopy = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.36, 0.08, 0.48)), carbonMat);
+    const topCanopy = new THREE.Mesh(this.trackGeo(craftedBox(0.36, 0.08, 0.48)), carbonMat);
     topCanopy.position.set(0, 0.11, -0.02);
     bodyGroup.add(topCanopy);
 
@@ -646,7 +726,7 @@ export class EnemyFactory {
     ];
     for (const [ax, az] of armCoords) {
       const boomLen = Math.hypot(ax, az);
-      const boom = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.055, 0.036, boomLen)), carbonMat);
+      const boom = new THREE.Mesh(this.trackGeo(craftedBox(0.055, 0.036, boomLen)), carbonMat);
       boom.position.set(ax * 0.5, 0.02, az * 0.5);
       boom.rotation.y = Math.atan2(ax, az);
       tagHit(boom, false);
@@ -661,7 +741,7 @@ export class EnemyFactory {
       hub.position.set(ax, 0.04, az);
       bodyGroup.add(hub);
 
-      const blade = new THREE.Mesh(this.trackGeo(new THREE.BoxGeometry(0.35, 0.012, 0.042)), droneBodyMat);
+      const blade = new THREE.Mesh(this.trackGeo(craftedBox(0.35, 0.012, 0.042)), droneBodyMat);
       blade.position.set(ax, 0.075, az);
       bodyGroup.add(blade);
       rotors.push(blade);
@@ -726,7 +806,11 @@ export class EnemyFactory {
   }
 
   public dispose() {
+    for (const template of this.templates.values()) this.disposeEnemyMaterials(template);
+    this.templates.clear();
+    this.templateNodes.clear();
     this.geometries.forEach((g) => g.dispose());
+    this.geometryCache.clear();
     this.sharedContactMat.dispose();
     this.sharedFlashMat.dispose();
   }

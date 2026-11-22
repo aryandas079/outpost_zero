@@ -240,10 +240,29 @@ export interface HudSnapshot {
   dashCooldownMax: number;
   dashing: boolean;
   gpuPostFx: boolean;
+  performance?: {
+    fps: number;
+    averageFps: number;
+    peakFps: number;
+    frameMs: number;
+    worstFrameMs: number;
+    drawCalls: number;
+    resolutionScale: number;
+    cpuMs: number;
+    gpuMs: number;
+    gpuName: string;
+    triangles: number;
+  };
   radar: RadarState;
 }
 
 export interface GameSettings {
   sensitivity: number; // 0.3 .. 2.2
   muted: boolean;
+  graphicsPreset: 'quality' | 'balanced' | 'performance' | 'custom';
+  resolutionScale: number; // 0.5 .. 1.0 of native display resolution
+  targetFps: 60 | 90 | 100 | 120 | 144;
+  dynamicResolution: boolean;
+  shadowQuality: 'off' | 'medium' | 'high';
+  textureFiltering: 2 | 4 | 8;
 }

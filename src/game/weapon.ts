@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { craftedBox, batchDecoration } from './geometry';
 import { ProceduralTextures } from './textures';
 import { WeaponId } from './types';
 
@@ -378,11 +379,11 @@ export class FirstPersonWeaponRig {
     this.carbineGroup.add(upperReceiver);
 
     // Lower receiver chassis with flared magwell & matte steel trim
-    const lowerReceiver = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.056, 0.052, 0.34)), fdeCerakoteMat);
+    const lowerReceiver = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.052, 0.34)), fdeCerakoteMat);
     lowerReceiver.position.set(0, -0.04, 0.03);
     this.carbineGroup.add(lowerReceiver);
 
-    const magWell = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.062, 0.048, 0.095)), anodizedBlackMat);
+    const magWell = new THREE.Mesh(trackGeo(craftedBox(0.062, 0.048, 0.095)), anodizedBlackMat);
     magWell.position.set(0, -0.056, -0.088);
     this.carbineGroup.add(magWell);
 
@@ -392,25 +393,25 @@ export class FirstPersonWeaponRig {
     bufferTube.position.set(0, 0.012, 0.36);
     this.carbineGroup.add(bufferTube);
 
-    const rearStock = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.052, 0.082, 0.2)), fdeCerakoteMat);
+    const rearStock = new THREE.Mesh(trackGeo(craftedBox(0.052, 0.082, 0.2)), fdeCerakoteMat);
     rearStock.position.set(0, -0.012, 0.39);
     rearStock.rotation.x = -0.06;
     this.carbineGroup.add(rearStock);
 
     // Rear T-handle charging latch perched right behind the rear BUIS (matches Image 2 foreground!)
-    const chLatchBase = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.056, 0.014, 0.026)), anodizedBlackMat);
+    const chLatchBase = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.014, 0.026)), anodizedBlackMat);
     chLatchBase.position.set(0, 0.042, 0.248);
     this.carbineGroup.add(chLatchBase);
-    const chLatchHook = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.022, 0.016, 0.014)), wornGunmetalMat);
+    const chLatchHook = new THREE.Mesh(trackGeo(craftedBox(0.022, 0.016, 0.014)), wornGunmetalMat);
     chLatchHook.position.set(-0.026, 0.042, 0.256);
     this.carbineGroup.add(chLatchHook);
 
     // Left-side recessed bolt catch, fire selector lever & structural rib (prominent in hipfire)
-    const leftSideRib = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.008, 0.022, 0.36)), anodizedBlackMat);
+    const leftSideRib = new THREE.Mesh(trackGeo(craftedBox(0.008, 0.022, 0.36)), anodizedBlackMat);
     leftSideRib.position.set(-0.037, 0.008, 0.02);
     this.carbineGroup.add(leftSideRib);
 
-    const boltCatch = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.01, 0.026, 0.018)), wornGunmetalMat);
+    const boltCatch = new THREE.Mesh(trackGeo(craftedBox(0.01, 0.026, 0.018)), wornGunmetalMat);
     boltCatch.position.set(-0.038, -0.012, -0.04);
     this.carbineGroup.add(boltCatch);
 
@@ -419,22 +420,22 @@ export class FirstPersonWeaponRig {
     selectorDrum.position.set(-0.035, -0.022, 0.095);
     this.carbineGroup.add(selectorDrum);
 
-    const selectorLever = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.012, 0.007, 0.028)), anodizedBlackMat);
+    const selectorLever = new THREE.Mesh(trackGeo(craftedBox(0.012, 0.007, 0.028)), anodizedBlackMat);
     selectorLever.position.set(-0.039, -0.022, 0.082);
     selectorLever.rotation.x = 0.22;
     this.carbineGroup.add(selectorLever);
 
     // Reciprocating side charging carrier & right ejection port + angled brass deflector
     this.carbineBolt = new THREE.Group();
-    const boltPlate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.012, 0.02, 0.072)), wornGunmetalMat);
+    const boltPlate = new THREE.Mesh(trackGeo(craftedBox(0.012, 0.02, 0.072)), wornGunmetalMat);
     boltPlate.position.set(0.034, 0.014, -0.03);
     this.carbineBolt.add(boltPlate);
-    const boltHandle = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.026, 0.011, 0.022)), bluedBarrelMat);
+    const boltHandle = new THREE.Mesh(trackGeo(craftedBox(0.026, 0.011, 0.022)), bluedBarrelMat);
     boltHandle.position.set(-0.041, 0.024, -0.055);
     this.carbineBolt.add(boltHandle);
     this.carbineGroup.add(this.carbineBolt);
 
-    const brassDeflector = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.018, 0.022, 0.024)), fdeCerakoteMat);
+    const brassDeflector = new THREE.Mesh(trackGeo(craftedBox(0.018, 0.022, 0.024)), fdeCerakoteMat);
     brassDeflector.position.set(0.036, 0.016, 0.026);
     brassDeflector.rotation.y = 0.45;
     this.carbineGroup.add(brassDeflector);
@@ -449,7 +450,7 @@ export class FirstPersonWeaponRig {
     fwdAssistCap.position.set(0.041, 0.001, 0.111);
     this.carbineGroup.add(fwdAssistCap);
 
-    const dustCover = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.004, 0.022, 0.078)), anodizedBlackMat);
+    const dustCover = new THREE.Mesh(trackGeo(craftedBox(0.004, 0.022, 0.078)), anodizedBlackMat);
     dustCover.position.set(0.0365, -0.008, -0.028);
     dustCover.rotation.z = -0.32;
     this.carbineGroup.add(dustCover);
@@ -464,14 +465,14 @@ export class FirstPersonWeaponRig {
     }
 
     // Trigger guard housing + curved steel trigger
-    const trigGuardBottom = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.014, 0.005, 0.068)), anodizedBlackMat);
+    const trigGuardBottom = new THREE.Mesh(trackGeo(craftedBox(0.014, 0.005, 0.068)), anodizedBlackMat);
     trigGuardBottom.position.set(0, -0.095, 0.065);
     this.carbineGroup.add(trigGuardBottom);
-    const trigGuardFront = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.014, 0.034, 0.006)), anodizedBlackMat);
+    const trigGuardFront = new THREE.Mesh(trackGeo(craftedBox(0.014, 0.034, 0.006)), anodizedBlackMat);
     trigGuardFront.position.set(0, -0.08, 0.033);
     trigGuardFront.rotation.x = 0.25;
     this.carbineGroup.add(trigGuardFront);
-    const triggerBlade = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.005, 0.026, 0.006)), wornGunmetalMat);
+    const triggerBlade = new THREE.Mesh(trackGeo(craftedBox(0.005, 0.026, 0.006)), wornGunmetalMat);
     triggerBlade.position.set(0, -0.074, 0.068);
     triggerBlade.rotation.x = -0.36;
     this.carbineGroup.add(triggerBlade);
@@ -485,7 +486,7 @@ export class FirstPersonWeaponRig {
     gasTube.rotation.x = Math.PI / 2;
     gasTube.position.set(0, 0.032, -0.29);
     this.carbineGroup.add(gasTube);
-    const gasBlock = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.024, 0.034, 0.034)), anodizedBlackMat);
+    const gasBlock = new THREE.Mesh(trackGeo(craftedBox(0.024, 0.034, 0.034)), anodizedBlackMat);
     gasBlock.position.set(0, 0.018, -0.43);
     this.carbineGroup.add(gasBlock);
 
@@ -517,7 +518,7 @@ export class FirstPersonWeaponRig {
     this.carbineGroup.add(handguard);
 
     // Dark recessed M-LOK ventilation slots along both sides of handguard
-    const ventSlotGeo = trackGeo(new THREE.BoxGeometry(0.004, 0.009, 0.044));
+    const ventSlotGeo = trackGeo(craftedBox(0.004, 0.009, 0.044));
     for (let i = 0; i < 4; i++) {
       const vz = -0.215 - i * 0.062;
       const vl = new THREE.Mesh(ventSlotGeo, bluedBarrelMat);
@@ -528,11 +529,11 @@ export class FirstPersonWeaponRig {
     }
 
     // Crisp Full-Length Machined 1913 Picatinny Top Rail (prominent specular highlights like Image 2!)
-    const topRailSpine = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.028, 0.011, 0.68)), anodizedBlackMat);
+    const topRailSpine = new THREE.Mesh(trackGeo(craftedBox(0.028, 0.011, 0.68)), anodizedBlackMat);
     topRailSpine.position.set(0, 0.056, -0.115);
     this.carbineGroup.add(topRailSpine);
 
-    const railToothGeo = trackGeo(new THREE.BoxGeometry(0.033, 0.007, 0.012));
+    const railToothGeo = trackGeo(craftedBox(0.033, 0.007, 0.012));
     for (let i = 0; i < 26; i++) {
       const zPos = 0.19 - i * 0.0245;
       // Leave clean mounting beds under the rear BUIS and forward Holo sight
@@ -550,19 +551,19 @@ export class FirstPersonWeaponRig {
     buisGroup.position.set(0, 0.062, 0.145);
     this.carbineGroup.add(buisGroup);
 
-    const buisBase = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.042, 0.018, 0.062)), fdeCerakoteMat);
+    const buisBase = new THREE.Mesh(trackGeo(craftedBox(0.042, 0.018, 0.062)), fdeCerakoteMat);
     buisBase.position.set(0, 0.006, 0);
     buisGroup.add(buisBase);
 
     // Side protective sight ears & folded dual-aperture sight leaf
-    const buisEarGeo = trackGeo(new THREE.BoxGeometry(0.008, 0.024, 0.044));
+    const buisEarGeo = trackGeo(craftedBox(0.008, 0.024, 0.044));
     const earL = new THREE.Mesh(buisEarGeo, wornGunmetalMat);
     earL.position.set(-0.017, 0.02, -0.004);
     const earR = new THREE.Mesh(buisEarGeo, wornGunmetalMat);
     earR.position.set(0.017, 0.02, -0.004);
     buisGroup.add(earL, earR);
 
-    const buisLeaf = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.024, 0.012, 0.036)), anodizedBlackMat);
+    const buisLeaf = new THREE.Mesh(trackGeo(craftedBox(0.024, 0.012, 0.036)), anodizedBlackMat);
     buisLeaf.position.set(0, 0.022, -0.006);
     buisGroup.add(buisLeaf);
 
@@ -590,7 +591,7 @@ export class FirstPersonWeaponRig {
     this.carbineGroup.add(holoGroup);
 
     // Heavy Picatinny riser clamp base + side quick-detach bolt
-    const holoMount = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.058, 0.024, 0.132)), anodizedBlackMat);
+    const holoMount = new THREE.Mesh(trackGeo(craftedBox(0.058, 0.024, 0.132)), anodizedBlackMat);
     holoMount.position.set(0, 0.012, 0.0);
     holoGroup.add(holoMount);
 
@@ -600,7 +601,7 @@ export class FirstPersonWeaponRig {
     holoGroup.add(holoThumbBolt);
 
     // Forward battery compartment pod extending toward barrel
-    const holoBatteryPod = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.056, 0.036, 0.068)), mattePolymerMat);
+    const holoBatteryPod = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.036, 0.068)), mattePolymerMat);
     holoBatteryPod.position.set(0, 0.038, -0.046);
     holoGroup.add(holoBatteryPod);
 
@@ -613,7 +614,7 @@ export class FirstPersonWeaponRig {
       holoBackFaceMat, // +Z face looking right at the player!
       anodizedBlackMat,
     ];
-    const holoRearPanel = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.064, 0.034, 0.054)), holoRearMats);
+    const holoRearPanel = new THREE.Mesh(trackGeo(craftedBox(0.064, 0.034, 0.054)), holoRearMats);
     holoRearPanel.position.set(0, 0.037, 0.026);
     holoGroup.add(holoRearPanel);
 
@@ -684,7 +685,7 @@ export class FirstPersonWeaponRig {
     holoGroup.add(holoReticleMesh);
 
     // Side-mounted AN/PEQ-15 Tactical Laser Illuminator Module + top-rail pressure switch & cable
-    const peqBody = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.038, 0.024, 0.088)), fdeCerakoteMat);
+    const peqBody = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.024, 0.088)), fdeCerakoteMat);
     peqBody.position.set(0.024, 0.038, -0.41);
     this.carbineGroup.add(peqBody);
     const peqEmitter = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.006, 0.006, 0.012, 10)), bluedBarrelMat);
@@ -695,7 +696,7 @@ export class FirstPersonWeaponRig {
     peqLens.rotation.x = Math.PI / 2;
     peqLens.position.set(0.015, 0.039, -0.456);
     this.carbineGroup.add(peqLens);
-    const pressurePad = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.024, 0.006, 0.068)), rubberMat);
+    const pressurePad = new THREE.Mesh(trackGeo(craftedBox(0.024, 0.006, 0.068)), rubberMat);
     pressurePad.position.set(0, 0.069, -0.32);
     this.carbineGroup.add(pressurePad);
 
@@ -724,22 +725,22 @@ export class FirstPersonWeaponRig {
 
     // Machined side compensator gas ports
     for (const pz of [-0.665, -0.688]) {
-      const port = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.04, 0.01, 0.011)), rubberMat);
+      const port = new THREE.Mesh(trackGeo(craftedBox(0.04, 0.01, 0.011)), rubberMat);
       port.position.set(0, 0.008, pz);
       this.carbineGroup.add(port);
     }
 
     // Low-profile folded front iron sight post
-    const frontSightBase = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.022, 0.014, 0.034)), anodizedBlackMat);
+    const frontSightBase = new THREE.Mesh(trackGeo(craftedBox(0.022, 0.014, 0.034)), anodizedBlackMat);
     frontSightBase.position.set(0, 0.064, -0.465);
     this.carbineGroup.add(frontSightBase);
 
     // Ergonomic Stippled Pistol Grip & Curved Ribbed Tactical PMAG with Brass Cartridge Window
-    const pistolGrip = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.038, 0.132, 0.054)), mattePolymerMat);
+    const pistolGrip = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.132, 0.054)), mattePolymerMat);
     pistolGrip.position.set(0, -0.106, 0.138);
     pistolGrip.rotation.x = 0.28;
     this.carbineGroup.add(pistolGrip);
-    const gripBackstrap = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.032, 0.122, 0.018)), rubberMat);
+    const gripBackstrap = new THREE.Mesh(trackGeo(craftedBox(0.032, 0.122, 0.018)), rubberMat);
     gripBackstrap.position.set(0, -0.108, 0.163);
     gripBackstrap.rotation.x = 0.28;
     this.carbineGroup.add(gripBackstrap);
@@ -765,11 +766,11 @@ export class FirstPersonWeaponRig {
     this.carbineMag = new THREE.Mesh(magGeo, fdeCerakoteMat);
     this.carbineMag.position.set(0, -0.056, -0.088);
     // Magazine floorplate & recessed cartridge window showing stacked brass rounds
-    const magFloorplate = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.04, 0.014, 0.066)), rubberMat);
+    const magFloorplate = new THREE.Mesh(trackGeo(craftedBox(0.04, 0.014, 0.066)), rubberMat);
     magFloorplate.position.set(0, -0.184, -0.038);
     magFloorplate.rotation.x = -0.22;
     this.carbineMag.add(magFloorplate);
-    const magWindow = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.037, 0.058, 0.014)), brassAccentMat);
+    const magWindow = new THREE.Mesh(trackGeo(craftedBox(0.037, 0.058, 0.014)), brassAccentMat);
     magWindow.position.set(0, -0.105, -0.016);
     magWindow.rotation.x = -0.18;
     this.carbineMag.add(magWindow);
@@ -828,20 +829,20 @@ export class FirstPersonWeaponRig {
     this.railGroup.add(snpReceiver);
 
     // Matte-tan distressed cheek-rest stock & lower chassis
-    const snpLower = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.054, 0.048, 0.38)), fdeCerakoteMat);
+    const snpLower = new THREE.Mesh(trackGeo(craftedBox(0.054, 0.048, 0.38)), fdeCerakoteMat);
     snpLower.position.set(0, -0.038, 0.02);
     this.railGroup.add(snpLower);
 
-    const snpStock = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.054, 0.086, 0.28)), fdeCerakoteMat);
+    const snpStock = new THREE.Mesh(trackGeo(craftedBox(0.054, 0.086, 0.28)), fdeCerakoteMat);
     snpStock.position.set(0, -0.008, 0.34);
     this.railGroup.add(snpStock);
 
-    const snpCheekPad = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.058, 0.024, 0.16)), rubberMat);
+    const snpCheekPad = new THREE.Mesh(trackGeo(craftedBox(0.058, 0.024, 0.16)), rubberMat);
     snpCheekPad.position.set(0, 0.042, 0.32);
     this.railGroup.add(snpCheekPad);
 
     // Top Picatinny Rail beneath the scope mount
-    const snpRail = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.03, 0.012, 0.66)), anodizedBlackMat);
+    const snpRail = new THREE.Mesh(trackGeo(craftedBox(0.03, 0.012, 0.66)), anodizedBlackMat);
     snpRail.position.set(0, 0.055, -0.14);
     this.railGroup.add(snpRail);
 
@@ -853,7 +854,7 @@ export class FirstPersonWeaponRig {
     }
 
     // Long Free-Float Marksman Shroud + Folded Tactical Bipod + Heavy Fluted Suppressed Barrel
-    const snpHandguard = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.054, 0.058, 0.38)), fdeCerakoteMat);
+    const snpHandguard = new THREE.Mesh(trackGeo(craftedBox(0.054, 0.058, 0.38)), fdeCerakoteMat);
     snpHandguard.position.set(0, 0.006, -0.37);
     this.railGroup.add(snpHandguard);
 
@@ -866,7 +867,7 @@ export class FirstPersonWeaponRig {
       sr.position.set(0.028, 0.008, vz);
       this.railGroup.add(sl, sr);
     }
-    const bipodClamp = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.044, 0.022, 0.048)), anodizedBlackMat);
+    const bipodClamp = new THREE.Mesh(trackGeo(craftedBox(0.044, 0.022, 0.048)), anodizedBlackMat);
     bipodClamp.position.set(0, -0.032, -0.49);
     this.railGroup.add(bipodClamp);
     for (const bx of [-0.026, 0.026]) {
@@ -904,19 +905,19 @@ export class FirstPersonWeaponRig {
     this.railGroup.add(this.railBolt);
 
     // Straight heavy .308 box magazine, trigger guard & grip
-    this.railMag = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.036, 0.145, 0.082)), anodizedBlackMat);
+    this.railMag = new THREE.Mesh(trackGeo(craftedBox(0.036, 0.145, 0.082)), anodizedBlackMat);
     this.railMag.position.set(0, -0.095, -0.095);
     this.railGroup.add(this.railMag);
 
-    const snpTrigGuard = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.014, 0.005, 0.068)), anodizedBlackMat);
+    const snpTrigGuard = new THREE.Mesh(trackGeo(craftedBox(0.014, 0.005, 0.068)), anodizedBlackMat);
     snpTrigGuard.position.set(0, -0.094, 0.064);
     this.railGroup.add(snpTrigGuard);
-    const snpTrigger = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.005, 0.024, 0.006)), wornGunmetalMat);
+    const snpTrigger = new THREE.Mesh(trackGeo(craftedBox(0.005, 0.024, 0.006)), wornGunmetalMat);
     snpTrigger.position.set(0, -0.074, 0.066);
     snpTrigger.rotation.x = -0.34;
     this.railGroup.add(snpTrigger);
 
-    const snpGrip = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.038, 0.13, 0.054)), rubberMat);
+    const snpGrip = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.13, 0.054)), rubberMat);
     snpGrip.position.set(0, -0.105, 0.135);
     snpGrip.rotation.x = 0.25;
     this.railGroup.add(snpGrip);
@@ -930,7 +931,7 @@ export class FirstPersonWeaponRig {
     this.railGroup.add(scopeGroup);
 
     // Dual heavy tactical scope mount rings clamping scope to top rail
-    const ringClampGeo = trackGeo(new THREE.BoxGeometry(0.048, 0.068, 0.03));
+    const ringClampGeo = trackGeo(craftedBox(0.048, 0.068, 0.03));
     const mountRingRear = new THREE.Mesh(ringClampGeo, anodizedBlackMat);
     mountRingRear.position.set(0, -0.056, 0.035);
     const mountRingFront = new THREE.Mesh(ringClampGeo, anodizedBlackMat);
@@ -1016,7 +1017,7 @@ export class FirstPersonWeaponRig {
     magRing.rotation.x = Math.PI / 2;
     magRing.position.set(0, 0, 0.078);
     scopeGroup.add(magRing);
-    const throwLever = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.008, 0.018, 0.01)), wornGunmetalMat);
+    const throwLever = new THREE.Mesh(trackGeo(craftedBox(0.008, 0.018, 0.01)), wornGunmetalMat);
     throwLever.position.set(-0.033, 0.026, 0.078);
     throwLever.rotation.z = 0.85;
     scopeGroup.add(throwLever);
@@ -1107,6 +1108,20 @@ export class FirstPersonWeaponRig {
         life: 0,
       });
     }
+    // Merge rigid receiver/rail/hand details while retaining reload pivots,
+    // magazines, muzzle cards and individually moving shell casings.
+    const protectedParts = new Set<THREE.Object3D>([
+      this.carbineMag, this.railMag, ...this.shells.map(shell => shell.mesh),
+    ]);
+    this.root.userData.rigidBatching = batchDecoration(
+      this.root, protectedParts, new Set([this.muzzleFlashGroup]), this.geometries, true,
+    );
+    this.root.traverse(object => {
+      if (object instanceof THREE.Mesh && !protectedParts.has(object) && !this.muzzleFlameCards.includes(object)) {
+        object.updateMatrix();
+        object.matrixAutoUpdate = false;
+      }
+    });
   }
 
   /**
@@ -1633,7 +1648,7 @@ export class FirstPersonWeaponRig {
     );
     rightArm.add(new THREE.Mesh(rGloveGeo, brutalistGloveMat));
 
-    const rKnuckleGuard = new THREE.Mesh(trackGeo(new THREE.BoxGeometry(0.01, 0.044, 0.026)), brutalistArmorMat);
+    const rKnuckleGuard = new THREE.Mesh(trackGeo(craftedBox(0.01, 0.044, 0.026)), brutalistArmorMat);
     rKnuckleGuard.position.set(0.037, -0.096, 0.136);
     rKnuckleGuard.rotation.x = 0.26;
     rightArm.add(rKnuckleGuard);

@@ -1,10 +1,10 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { AdaptiveRenderQuality } from './renderQuality';
+import { FrameMetrics, GpuFrameTimer } from './frameMetrics';
+import { StaticSceneBatches } from './staticBatches';
+import { CachedSky } from './cachedSky';
+import { DEFAULT_GAME_SETTINGS } from './graphicsSettings';
 import { ArenaData, buildWestTownArena } from './arena';
 import { FootstepSurface, TacticalAudio } from './audio';
 import { EnemyEntity, EnemyFactory, EnemyKind } from './enemies';
@@ -285,62 +285,6 @@ function detectSoftwareWebGL(): boolean {
   }
 }
 
-const CombatFeedbackShader = {
-  uniforms: {
-    tDiffuse: { value: null },
-    uDamage: { value: 0.0 },
-    uAberration: { value: 0.0 },
-    uDash: { value: 0.0 },
-    uLowHealth: { value: 0.0 },
-  },
-  vertexShader: `
-    varying vec2 vUv;
-    void main() {
-      vUv = uv;
-      gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-    }
-  `,
-  fragmentShader: `
-    uniform sampler2D tDiffuse;
-    uniform float uDamage;
-    uniform float uAberration;
-    uniform float uDash;
-    uniform float uLowHealth;
-    varying vec2 vUv;
-
-    void main() {
-      vec2 centered = vUv - 0.5;
-      float dist = length(centered);
-
-      // Radial RGB chromatic aberration flash on damage impact & dash kinetic surge
-      float splitStrength = uAberration * 0.032 + uDash * 0.013;
-      vec2 offset = centered * dist * splitStrength;
-
-      vec3 col;
-      if (splitStrength > 0.0002) {
-        float r = texture2D(tDiffuse, clamp(vUv + offset, 0.0, 1.0)).r;
-        float g = texture2D(tDiffuse, vUv).g;
-        float b = texture2D(tDiffuse, clamp(vUv - offset, 0.0, 1.0)).b;
-        col = vec3(r, g, b);
-      } else {
-        col = texture2D(tDiffuse, vUv).rgb;
-      }
-
-      // Screen-space red edge vignette on damage & critical low health
-      float edgeMask = smoothstep(0.28, 0.86, dist);
-      float redPulse = clamp((uDamage * 0.82 + uLowHealth * 0.30) * edgeMask, 0.0, 0.88);
-      vec3 crimsonTint = vec3(0.82, 0.05, 0.07);
-      col = mix(col, crimsonTint, redPulse);
-
-      // Subtle cool kinetic edge framing during dash
-      float dashEdge = smoothstep(0.46, 0.88, dist) * uDash * 0.16;
-      col = mix(col, vec3(0.75, 0.92, 1.0), dashEdge);
-
-      gl_FragColor = vec4(col, 1.0);
-    }
-  `,
-};
-
 const SUN_DIRECTION = new THREE.Vector3(68, 34, 42).normalize();
 
 const SkyDomeShader = {
@@ -464,9 +408,14 @@ export class OutpostGameEngine {
 
   private readonly isSoftwareGl: boolean;
   private readonly renderer: THREE.WebGLRenderer;
-  private readonly composer: EffectComposer | null;
-  private readonly bloomPass: UnrealBloomPass | null;
-  private readonly feedbackPass: ShaderPass | null;
+  private renderQuality: AdaptiveRenderQuality;
+  private readonly nativePixelRatio: number;
+  private readonly gpuTimer: GpuFrameTimer;
+  private readonly staticBatches: StaticSceneBatches;
+  private readonly cachedSky: CachedSky;
+  private readonly frameMetrics = new FrameMetrics();
+  private renderWorkMs = 5;
+  private readonly gpuName: string;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
   private readonly envTarget: THREE.WebGLRenderTarget;
@@ -676,7 +625,7 @@ export class OutpostGameEngine {
   private lastDragY = 0;
   private lookDeltaX = 0;
   private lookDeltaY = 0;
-  private settings: GameSettings = { sensitivity: 1.0, muted: false };
+  private settings: GameSettings = { ...DEFAULT_GAME_SETTINGS };
 
   // Loop & lifecycle
   private frameId = 0;
@@ -710,15 +659,25 @@ export class OutpostGameEngine {
     this.isSoftwareGl = detectSoftwareWebGL();
 
     this.renderer = new THREE.WebGLRenderer({
-      antialias: !this.isSoftwareGl,
+      antialias: true,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 0.92;
-    this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio || 1, 2));
+    this.renderer.toneMappingExposure = 0.98;
+    this.renderer.info.autoReset = false;
+    this.nativePixelRatio = this.isSoftwareGl ? 0.5 : Math.min(window.devicePixelRatio || 1, 2);
+    const pixelRatio = this.nativePixelRatio * this.settings.resolutionScale;
+    this.renderQuality = new AdaptiveRenderQuality(pixelRatio, this.settings.targetFps, this.nativePixelRatio * 0.7);
+    this.gpuTimer = new GpuFrameTimer(this.renderer.getContext() as WebGL2RenderingContext);
+    const gl = this.renderer.getContext();
+    const rendererInfo = gl.getExtension('WEBGL_debug_renderer_info');
+    this.gpuName = rendererInfo ? String(gl.getParameter(rendererInfo.UNMASKED_RENDERER_WEBGL)) : 'WebGL GPU';
+    this.renderer.setPixelRatio(pixelRatio);
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
-    this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    this.renderer.shadowMap.type = THREE.PCFShadowMap;
+    this.renderer.shadowMap.autoUpdate = false;
+    this.renderer.shadowMap.needsUpdate = true;
 
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
@@ -748,13 +707,14 @@ export class OutpostGameEngine {
     this.poolGeos.push(skyGeo);
     this.poolMats.push(skyMat);
     const skyDome = new THREE.Mesh(skyGeo, skyMat);
-    this.scene.add(skyDome);
+    this.cachedSky = new CachedSky(skyDome, this.scene);
+    this.cachedSky.update(this.renderer, 1);
 
     // Mandatory RoomEnvironment IBL on every device
     const pmrem = new THREE.PMREMGenerator(this.renderer);
     this.envTarget = pmrem.fromScene(new RoomEnvironment(), 0.04);
     this.scene.environment = this.envTarget.texture;
-    this.scene.environmentIntensity = 0.32;
+    this.scene.environmentIntensity = 0.42;
     pmrem.dispose();
 
     // Camera (raised near plane & tightened far plane boost 24-bit depth precision ~42% to eliminate Z-fighting)
@@ -779,8 +739,8 @@ export class OutpostGameEngine {
     this.sunLight.shadow.camera.right = shadowBound;
     this.sunLight.shadow.camera.top = shadowBound;
     this.sunLight.shadow.camera.bottom = -shadowBound;
-    this.sunLight.shadow.bias = -0.0006;
-    this.sunLight.shadow.normalBias = 0.055;
+    this.sunLight.shadow.bias = -0.00015;
+    this.sunLight.shadow.normalBias = 0.025;
     this.scene.add(this.sunLight);
 
     this.rimLight = new THREE.DirectionalLight(0x6c9fd4, 0.22);
@@ -801,13 +761,20 @@ export class OutpostGameEngine {
     this.scene.add(this.impactLight);
 
     // Procedural textures, Complete Enterable WEST Town Map, Physics Mesh World, Occlusion Culler, Weapon Rig
-    this.textures = createProceduralTextures(this.renderer.capabilities.getMaxAnisotropy());
+    this.textures = createProceduralTextures(Math.min(this.settings.textureFiltering, this.renderer.capabilities.getMaxAnisotropy()));
     this.arena = buildWestTownArena(this.textures);
     this.scene.add(this.arena.group);
 
     // Physics-Based Environment Mesh Collision World & Conservative 3D Wall Occlusion Culling System
     this.physics = new PhysicsWorld(this.arena);
     this.occlusion = new OcclusionCullingSystem(this.arena);
+    this.arena.group.userData.staticBatching = this.arena.optimizeRendering();
+    const animatedRoots = new Set<THREE.Object3D>(this.arena.animatedProps.tumbleweeds.map(item => item.mesh));
+    if (this.arena.animatedProps.windmillWheel) animatedRoots.add(this.arena.animatedProps.windmillWheel);
+    if (this.arena.animatedProps.flagMesh) animatedRoots.add(this.arena.animatedProps.flagMesh);
+    this.staticBatches = new StaticSceneBatches(this.arena.group, animatedRoots);
+    this.raycaster.layers.enable(31);
+    this.footRaycaster.layers.enable(31);
     this.playerBody = PhysicsWorld.createCapsuleBody(
       this.playerPos,
       this.playerVel,
@@ -842,31 +809,17 @@ export class OutpostGameEngine {
     this.particleMesh = this.initPools();
     this.initAmbientDesertDust();
 
-    // Screen-space Post-Processing pipeline on GPU (skip multi-pass composer on Software WebGL)
-    if (!this.isSoftwareGl) {
-      const composer = new EffectComposer(this.renderer);
-      composer.setPixelRatio(this.renderer.getPixelRatio());
-      composer.setSize(width, height);
-      composer.addPass(new RenderPass(this.scene, this.camera));
-
-      // Restrained HDR-only bloom so muzzle flashes, reticles & sparks glow cleanly with zero daylight glare
-      const bloomPass = new UnrealBloomPass(new THREE.Vector2(width, height), 0.12, 0.24, 1.36);
-      composer.addPass(bloomPass);
-
-      composer.addPass(new OutputPass());
-      const feedbackPass = new ShaderPass(CombatFeedbackShader);
-      composer.addPass(feedbackPass);
-      this.composer = composer;
-      this.bloomPass = bloomPass;
-      this.feedbackPass = feedbackPass;
-      this.applyWeatherBlend(WEATHER_PRESETS.sunny, WEATHER_PRESETS.sunny, 0);
-      this.renderer.compile(this.scene, this.camera);
-    } else {
-      this.composer = null;
-      this.bloomPass = null;
-      this.feedbackPass = null;
-      this.applyWeatherBlend(WEATHER_PRESETS.sunny, WEATHER_PRESETS.sunny, 0);
-    }
+    // Damage feedback is drawn by the HUD; the world stays on a single render pass.
+    this.applyWeatherBlend(WEATHER_PRESETS.sunny, WEATHER_PRESETS.sunny, 0);
+    this.cachedSky.update(this.renderer, 1);
+    const enemyWarmup = this.enemyFactory.createWarmupGroup();
+    this.scene.add(enemyWarmup);
+    // Include the weapon's muzzle light in the same lighting configuration used
+    // during play; otherwise the first frame recompiles every lit material.
+    this.weaponRig.root.visible = true;
+    this.renderer.compile(this.scene, this.camera);
+    this.weaponRig.root.visible = false;
+    this.scene.remove(enemyWarmup);
 
     this.bindEvents();
     this.emitHud(true);
@@ -1353,6 +1306,7 @@ export class OutpostGameEngine {
     if (config?.mapId) this.mapId = config.mapId;
     this.endless = false;
     this.resetCombatState();
+    this.frameMetrics.reset();
     this.phase = 'playing';
     this.weaponRig.root.visible = true;
     this.startWave(1);
@@ -1402,6 +1356,39 @@ export class OutpostGameEngine {
   public updateSettings(next: Partial<GameSettings>) {
     this.settings = { ...this.settings, ...next };
     this.audio.setMuted(this.settings.muted);
+    this.applyGraphicsSettings();
+  }
+
+  private applyGraphicsSettings() {
+    const ceiling = this.nativePixelRatio * this.settings.resolutionScale;
+    const minimumScale = this.settings.graphicsPreset === 'quality'
+      ? 0.8
+      : this.settings.graphicsPreset === 'performance' ? 0.5 : 0.7;
+    const floor = this.nativePixelRatio * Math.min(this.settings.resolutionScale, minimumScale);
+    this.renderQuality = new AdaptiveRenderQuality(ceiling, this.settings.targetFps, floor);
+    this.renderer.setPixelRatio(ceiling);
+
+    const shadowsEnabled = !this.isSoftwareGl && this.settings.shadowQuality !== 'off';
+    const shadowSize = this.settings.shadowQuality === 'high' ? 2048 : 1024;
+    const sizeChanged = this.sunLight.shadow.mapSize.width !== shadowSize;
+    this.renderer.shadowMap.enabled = shadowsEnabled;
+    this.sunLight.castShadow = shadowsEnabled;
+    if (sizeChanged) {
+      this.sunLight.shadow.mapSize.set(shadowSize, shadowSize);
+      this.sunLight.shadow.map?.dispose();
+      this.sunLight.shadow.map = null;
+    }
+    this.renderer.shadowMap.needsUpdate = shadowsEnabled;
+
+    const maxFiltering = Math.min(this.settings.textureFiltering, this.renderer.capabilities.getMaxAnisotropy());
+    for (const value of Object.values(this.textures)) {
+      if (value instanceof THREE.Texture && value.anisotropy !== maxFiltering) {
+        value.anisotropy = maxFiltering;
+        value.needsUpdate = true;
+      }
+    }
+    this.handleResize();
+    this.emitHud(true);
   }
 
   // Mobile Touch & HUD Action API
@@ -1905,6 +1892,11 @@ export class OutpostGameEngine {
 
   private readonly handleBlur = () => {
     this.clearInputs();
+    if (this.phase === 'playing') this.pauseMission();
+  };
+
+  private readonly handleVisibilityChange = () => {
+    if (document.hidden) this.handleBlur();
   };
 
   private readonly handleWebGLContextLost = (e: Event) => {
@@ -1923,13 +1915,6 @@ export class OutpostGameEngine {
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
-    if (this.composer) {
-      this.composer.setPixelRatio(this.renderer.getPixelRatio());
-      this.composer.setSize(w, h);
-    }
-    if (this.bloomPass) {
-      this.bloomPass.setSize(w, h);
-    }
   }
 
   private bindEvents() {
@@ -1942,6 +1927,7 @@ export class OutpostGameEngine {
     window.addEventListener('contextmenu', this.handleContextMenu);
     window.addEventListener('blur', this.handleBlur);
     document.addEventListener('pointerlockchange', this.handlePointerLockChange);
+    document.addEventListener('visibilitychange', this.handleVisibilityChange);
 
     const canvas = this.renderer.domElement;
     canvas.addEventListener('webglcontextlost', this.handleWebGLContextLost);
@@ -3331,12 +3317,12 @@ export class OutpostGameEngine {
           // Verify rough line of sight before telegraphing
           _v1.copy(e.root.position).setY(e.kind === 'wasp' ? e.hoverBaseY : 1.6);
           _v2.copy(this.playerPos).setY(this.playerPos.y + 1.3);
-          _dir.subVectors(_v2, _v1).normalize();
-          this.raycaster.set(_v1, _dir);
-          this.raycaster.near = 0.2;
-          this.raycaster.far = dist;
-          const blocked = this.raycaster.intersectObjects(this.arena.shootableMeshes, false);
-          if (blocked.length === 0) {
+          // AI needs a visibility answer, not triangle-level impact details.
+          // Query the spatial hash instead of testing every facade triangle.
+          const blocked = this.physics.raycastSegment(
+            _v1.x, _v1.y, _v1.z, _v2.x, _v2.y, _v2.z, this.projRayHit, 0.01,
+          );
+          if (!blocked) {
             e.isWindingUp = true;
             e.windupTimer = e.windupDuration;
           } else {
@@ -3743,11 +3729,6 @@ export class OutpostGameEngine {
     this.renderer.toneMappingExposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
     this.scene.environmentIntensity = THREE.MathUtils.lerp(a.envIntensity, b.envIntensity, t);
     this.currentWeatherWind = THREE.MathUtils.lerp(a.windIntensity, b.windIntensity, t);
-    if (this.bloomPass) {
-      this.bloomPass.strength = THREE.MathUtils.lerp(a.bloomStrength, b.bloomStrength, t);
-      this.bloomPass.radius = THREE.MathUtils.lerp(a.bloomRadius, b.bloomRadius, t);
-      this.bloomPass.threshold = THREE.MathUtils.lerp(a.bloomThreshold, b.bloomThreshold, t);
-    }
   }
 
   private updateDamageNumbers(dt: number) {
@@ -3818,24 +3799,35 @@ export class OutpostGameEngine {
     const now = performance.now();
     const rawDt = (now - this.lastFrameMs) / 1000;
     this.lastFrameMs = now;
+    const foreground = document.visibilityState === 'visible' && document.hasFocus();
+    if (!foreground && this.phase === 'playing') this.pauseMission();
+    if (!this.isSoftwareGl && this.settings.dynamicResolution && this.phase === 'playing' && document.visibilityState === 'visible') {
+      const ratio = this.renderQuality.sample(Math.max(this.renderWorkMs, this.gpuTimer.milliseconds), rawDt * 1000);
+      if (ratio !== null) {
+        this.renderer.setPixelRatio(ratio);
+        this.handleResize();
+      }
+    }
     const clampedDt = Math.min(Math.max(rawDt, 0.001), 0.05);
     // Gentle EMA frame-delta smoothing removes micro-hitches for silky camera & weapon motion
     this.smoothedDt = THREE.MathUtils.lerp(this.smoothedDt, clampedDt, 0.38);
     const dt = this.smoothedDt;
 
     // Skip rendering the 3D background map while on the minimalist Home / Setup menu
-    if (this.phase === 'title') {
+    if (this.phase === 'title' || !foreground) {
       this.audio.updateAmbient(dt, this.playerPos, false, this.currentWeatherWind, false);
       this.frameId = window.setTimeout(this.tick, 60);
       return;
     }
 
     this.updateSimulation(dt);
+    if (this.phase === 'playing' && document.visibilityState === 'visible') this.frameMetrics.sample(rawDt * 1000);
 
     // Conservative 3D thick-wall occlusion culling pass right before rendering (skips hidden draw calls & overdraw)
     if (this.phase === 'playing') {
       this.occlusion.update(this.camera, this.playerPos, this.enemies, this.pickups, this.impactDecals);
     }
+    this.staticBatches.updateVisibility();
 
     this.audio.updateAmbient(
       dt,
@@ -3845,26 +3837,20 @@ export class OutpostGameEngine {
       this.phase === 'playing',
     );
 
-    if (this.composer && this.feedbackPass) {
-      const inCombat = this.phase === 'playing';
-      const lowHealthAmt =
-        inCombat && this.health <= 30
-          ? THREE.MathUtils.clamp((30 - this.health) / 30, 0, 1) * (0.65 + 0.35 * Math.sin(now * 0.008))
-          : 0;
-      this.feedbackPass.uniforms.uDamage.value = inCombat ? this.damageFlash : 0;
-      this.feedbackPass.uniforms.uAberration.value = inCombat ? this.damageAberration : 0;
-      this.feedbackPass.uniforms.uDash.value = inCombat ? this.dashVfx : 0;
-      this.feedbackPass.uniforms.uLowHealth.value = lowHealthAmt;
-      this.composer.render();
-    } else {
-      this.renderer.render(this.scene, this.camera);
-    }
+    // The town and sunlight direction are static: reuse their shadow map.
+    // Moving enemies already have animated ground-contact shadow meshes.
+    this.renderer.info.reset();
+    this.gpuTimer.begin();
+    this.cachedSky.update(this.renderer, clampedDt);
+    this.renderer.render(this.scene, this.camera);
+    this.gpuTimer.end();
 
     this.hudEmitAccum += clampedDt;
-    if (this.hudEmitAccum >= 0.04) {
+    if (this.hudEmitAccum >= 0.05) {
       this.hudEmitAccum = 0;
       this.emitHud(false);
     }
+    this.renderWorkMs = performance.now() - now;
 
     if (this.isSoftwareGl) {
       this.afterDraw(this.tick);
@@ -3961,7 +3947,20 @@ export class OutpostGameEngine {
       dashCooldown: this.dashCooldown,
       dashCooldownMax: this.dashCooldownMax,
       dashing: this.dashTimer > 0,
-      gpuPostFx: this.composer !== null,
+      gpuPostFx: false,
+      performance: {
+        fps: this.frameMetrics.fps,
+        averageFps: this.frameMetrics.averageFps,
+        peakFps: this.frameMetrics.peakFps,
+        frameMs: this.frameMetrics.frameMs,
+        worstFrameMs: this.frameMetrics.worstFrameMs,
+        drawCalls: this.renderer.info.render.calls,
+        resolutionScale: this.renderer.getPixelRatio() / this.nativePixelRatio,
+        cpuMs: this.renderWorkMs,
+        gpuMs: this.gpuTimer.milliseconds,
+        gpuName: this.gpuName,
+        triangles: this.renderer.info.render.triangles,
+      },
       radar: {
         playerX: this.playerPos.x,
         playerZ: this.playerPos.z,
@@ -4003,6 +4002,7 @@ export class OutpostGameEngine {
     window.removeEventListener('contextmenu', this.handleContextMenu);
     window.removeEventListener('blur', this.handleBlur);
     document.removeEventListener('pointerlockchange', this.handlePointerLockChange);
+    document.removeEventListener('visibilitychange', this.handleVisibilityChange);
 
     const canvas = this.renderer.domElement;
     canvas.removeEventListener('webglcontextlost', this.handleWebGLContextLost);
@@ -4010,6 +4010,7 @@ export class OutpostGameEngine {
 
     this.resizeObserver?.disconnect();
     this.clearEnemies();
+    this.staticBatches.dispose();
     this.arena.dispose();
     this.weaponRig.dispose();
     this.enemyFactory.dispose();
@@ -4025,7 +4026,8 @@ export class OutpostGameEngine {
       dp.mat.dispose();
     });
     this.audio.dispose();
-    this.composer?.dispose();
+    this.gpuTimer.dispose();
+    this.cachedSky.dispose();
     this.renderer.dispose();
 
     if (canvas.parentElement === this.container) {

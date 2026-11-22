@@ -4,6 +4,9 @@ import { ModalOverlay } from './components/ModalOverlay';
 import { TitleOverlay } from './components/TitleOverlay';
 import { OutpostGameEngine } from './game/engine';
 import { GameSettings, HudSnapshot, MissionConfig, WEAPON_SPECS, WeaponId } from './game/types';
+import { DEFAULT_GAME_SETTINGS, normalizeGameSettings } from './game/graphicsSettings';
+
+const SETTINGS_STORAGE_KEY = 'outpost-zero-settings-v1';
 
 const INITIAL_HUD: HudSnapshot = {
   phase: 'title',
@@ -113,9 +116,12 @@ export default function App() {
   const engineRef = useRef<OutpostGameEngine | null>(null);
 
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
-  const [settings, setSettings] = useState<GameSettings>({
-    sensitivity: 1.0,
-    muted: false,
+  const [settings, setSettings] = useState<GameSettings>(() => {
+    try {
+      return normalizeGameSettings(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) ?? 'null'));
+    } catch {
+      return { ...DEFAULT_GAME_SETTINGS };
+    }
   });
   const [missionConfig, setMissionConfig] = useState<MissionConfig>({
     difficulty: 'normal',
@@ -142,6 +148,14 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+    } catch {
+      // Settings still work for this session when storage is unavailable.
+    }
+  }, [settings]);
+
   // Attempt automatic landscape lock when a mobile user first taps the screen
   useEffect(() => {
     if (!isMobile) return;
@@ -163,6 +177,7 @@ export default function App() {
       (lost) => setContextLost(lost),
     );
     engineRef.current = engine;
+    engine.updateSettings(settings);
 
     return () => {
       engine.dispose();
@@ -218,6 +233,14 @@ export default function App() {
         return next;
       });
       return { ...prevHud, muted: nextMuted };
+    });
+  }, []);
+
+  const handleSettingsChange = useCallback((patch: Partial<GameSettings>) => {
+    setSettings((prev) => {
+      const next = { ...prev, ...patch };
+      engineRef.current?.updateSettings(next);
+      return next;
     });
   }, []);
 
@@ -317,6 +340,7 @@ export default function App() {
           onStartMission={handleStartMission}
           onSensitivityChange={handleSensitivityChange}
           onToggleMute={handleToggleMute}
+          onSettingsChange={handleSettingsChange}
         />
       )}
 
@@ -355,6 +379,7 @@ export default function App() {
           onMainMenu={handleMainMenu}
           onSensitivityChange={handleSensitivityChange}
           onToggleMute={handleToggleMute}
+          onSettingsChange={handleSettingsChange}
         />
       )}
 

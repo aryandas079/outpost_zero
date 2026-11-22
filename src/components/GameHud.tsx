@@ -511,6 +511,12 @@ export const GameHud: React.FC<GameHudProps> = React.memo(({
             <span className="text-amber-300 font-mono-num font-semibold">
               {hud.score.toLocaleString()} PTS
             </span>
+            {hud.performance && hud.performance.fps > 0 && (
+              <span className="text-emerald-300 font-mono-num normal-case tracking-normal"
+                title={`Session average ${hud.performance.averageFps} FPS · peak ${hud.performance.peakFps} FPS · frame ${hud.performance.frameMs.toFixed(1)} ms · slowest ${hud.performance.worstFrameMs.toFixed(1)} ms · CPU ${hud.performance.cpuMs.toFixed(1)} ms · GPU ${hud.performance.gpuMs.toFixed(1)} ms · ${hud.performance.drawCalls} draw calls · ${Math.round(hud.performance.resolutionScale * 100)}% resolution · ${hud.performance.triangles} triangles · ${hud.performance.gpuName}`}>
+                {hud.performance.fps} FPS
+              </span>
+            )}
           </div>
 
           {/* LIVE KILL FEED (Matching Reference Top-Left Kill Feed) */}

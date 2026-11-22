@@ -1,6 +1,7 @@
 import React from 'react';
 import { Volume2, VolumeX } from 'lucide-react';
 import { DIFFICULTY_SPECS, GameSettings, HudSnapshot, MAP_SPECS } from '../game/types';
+import { GraphicsSettings } from './GraphicsSettings';
 
 interface ModalOverlayProps {
   hud: HudSnapshot;
@@ -11,6 +12,7 @@ interface ModalOverlayProps {
   onMainMenu: () => void;
   onSensitivityChange: (val: number) => void;
   onToggleMute: () => void;
+  onSettingsChange: (patch: Partial<GameSettings>) => void;
 }
 
 export const ModalOverlay: React.FC<ModalOverlayProps> = ({
@@ -22,6 +24,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   onMainMenu,
   onSensitivityChange,
   onToggleMute,
+  onSettingsChange,
 }) => {
   const accuracy = hud.shotsFired > 0 ? Math.round((hud.shotsHit / hud.shotsFired) * 100) : 0;
   const isPaused = hud.phase === 'paused';
@@ -107,6 +110,8 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
                 <span>{settings.muted ? 'Muted' : 'Enabled'}</span>
               </button>
             </div>
+
+            <GraphicsSettings settings={settings} onChange={onSettingsChange} />
           </div>
         )}
 
