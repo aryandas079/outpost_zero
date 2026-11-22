@@ -1,4 +1,67 @@
 @import "tailwindcss";
+.model-review-tools button { padding:7px 10px; font:11px Arial,sans-serif; color:#dce2e2; background:#152027d9; border:1px solid #647880; border-radius:3px; cursor:pointer; }
+.model-review-tools button[aria-pressed=true] { color:#6de0ec; border-color:#6de0ec; }
+
+/* Reference-style in-match HUD: lightweight smoked glass and hairline frames. */
+.tactical-hud { z-index:30; --hud-cyan: #57d7ee; --hud-gold: #efb54e; position:absolute; inset:0; color:#f0f1ef; font-family:'Arial Narrow','Bahnschrift Condensed','Roboto Condensed',Arial,sans-serif; font-stretch:condensed; font-weight:400; text-shadow:0 1px 3px #0009; pointer-events:none; }
+.tactical-hud button { pointer-events:auto; cursor:pointer; }
+.tactical-hud button:disabled { cursor:default; opacity:.4; }
+.tactical-hud button:focus-visible { outline:2px solid var(--hud-cyan); outline-offset:3px; }
+.tac-match { position:absolute; top:14px; left:22px; display:flex; gap:12px; align-items:flex-start; }
+.tac-crest { width:51px; height:55px; color:#f0f3f0; filter:drop-shadow(0 2px 4px #000b); }
+.tac-match-body { width:201px; }
+.tac-mode { font-size:12px; letter-spacing:.45px; line-height:17px; }
+.tac-match-scores { display:flex; align-items:center; padding:2px 9px 3px 0; background:linear-gradient(90deg,#161b20bd,#161b2059); clip-path:polygon(0 0,100% 0,96% 100%,0 100%); }
+.tac-score-bars { width:128px; }
+.tac-score-bars>div { display:flex; gap:8px; align-items:center; height:16px; }
+.tac-score-bars strong { width:23px; font-size:18px; line-height:16px; font-weight:400; font-variant-numeric:tabular-nums; }
+.tac-score-bars i { height:5px; width:95px; background:#d0d3cf28; transform:skewX(-20deg); }
+.tac-score-bars b { display:block; height:100%; background:var(--hud-cyan); }
+.tac-score-bars b.tac-score-hostile { background:var(--hud-gold); }
+.tac-match time { margin-left:13px; padding-left:10px; border-left:1px solid #b8bdc5aa; transform:skewX(-10deg); font-size:15px; font-variant-numeric:tabular-nums; }
+.tac-status { color:var(--hud-cyan); margin-top:4px; font-size:11px; letter-spacing:.25px; }
+.tac-killfeed { position:absolute; left:0; top:95px; font-size:12px; }
+.tac-killfeed>div { display:flex; align-items:center; gap:8px; background:linear-gradient(90deg,#10161c9c,transparent); padding:2px 6px; }
+.tac-killfeed svg { width:34px; height:14px; }
+.tac-killfeed span:first-child { color:#6ad6f1; }.tac-killfeed span:last-child { color:#e3816c; }
+.tac-compass { position:absolute; top:7px; left:50%; width:min(40vw,500px); transform:translateX(-50%); height:35px; overflow:hidden; }
+.tac-compass-tick { position:absolute; top:0; transform:translateX(-50%); display:flex; align-items:center; flex-direction:column; font-size:11px; color:#c0c5ca; gap:3px; }
+.tac-compass-tick i { height:7px; width:1px; background:#c4c9ca; }.tac-compass-tick.is-cardinal { color:white; font-size:12px; }.tac-compass-tick.is-cardinal i { height:9px; }
+.tac-bearing { position:absolute; left:50%; top:0; transform:translateX(-50%); color:var(--hud-gold); font-size:18px; line-height:20px; display:flex; align-items:center; flex-direction:column; }
+.tac-bearing i { width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid white; margin-bottom:2px; }
+.tac-radar { position:absolute; top:6px; right:14px; display:flex; gap:13px; align-items:flex-start; }
+.tac-utilities { padding-top:10px; display:flex; flex-direction:column; gap:7px; }
+.tac-utilities button { width:29px; height:29px; display:grid; place-items:center; background:#1b242bc9; border:1px solid #b2bbc222; border-radius:4px; color:#f1f2ef; }
+.tac-utilities svg { width:16px; height:16px; }.tac-utilities button:last-child { opacity:0; transition:opacity .15s; }.tac-utilities:hover button:last-child,.tac-utilities:focus-within button:last-child { opacity:1; }
+.tac-panel { background:linear-gradient(115deg,#202424c4,#171b1db8); border:1px solid #c7cecf75; box-shadow:0 1px 5px #0003; }
+.tac-vitals-equipment { position:absolute; bottom:27px; left:30px; display:flex; gap:24px; align-items:center; }
+.tac-vitals { width:201px; padding:7px 12px 7px 10px; clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); }
+.tac-vitals>div { display:flex; align-items:center; gap:8px; height:23px; }
+.tac-vitals svg { width:16px; height:16px; stroke-width:3; }.tac-vitals>div:first-child svg { color:var(--hud-cyan); }
+.tac-vitals strong { width:32px; font-size:18px; line-height:20px; font-weight:500; font-variant-numeric:tabular-nums; }
+.tac-vitals i { width:104px; height:5px; background:#c5c7c629; transform:skewX(-20deg); }
+.tac-vitals b { display:block; height:100%; background:#f0f1ee; transition:width .15s; }.tac-vitals>div:first-child b { background:var(--hud-cyan); }
+.tac-vitals.is-critical>div:last-child { color:#fa7770; }.tac-vitals.is-critical>div:last-child b { background:#ed655c; }
+.tac-equipment { display:flex; gap:10px; padding-left:8px; border-left:1px solid #e0e3e05c; }
+.tac-equipment button { position:relative; width:43px; height:40px; display:flex; justify-content:center; align-items:center; border:1px solid #d6dcdd73; border-radius:3px; background:#1e2425a3; transform:skewX(-13deg); }
+.tac-equipment button>svg { width:22px; height:25px; transform:skewX(13deg); }.tac-equipment button:hover { background:#3a4c51c9; }
+.tac-equipment kbd { position:absolute; bottom:-15px; left:15px; background:#d3d6d4bd; color:#343738; font-size:10px; line-height:12px; border-radius:2px; min-width:11px; text-align:center; transform:skewX(13deg); text-shadow:none; }
+.tac-equipment small { position:absolute; top:1px; right:3px; font-size:9px; }.tac-dash-bars { position:absolute; display:flex; gap:3px; bottom:3px; }.tac-dash-bars i { width:6px; height:4px; background:var(--hud-gold); }
+.tac-weapon { position:absolute; bottom:27px; right:25px; width:263px; padding:4px 11px 7px 31px; clip-path:polygon(31px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%); }
+.tac-weapon::before { content:''; position:absolute; left:14px; top:-5px; height:90px; width:2px; background:var(--hud-cyan); transform:rotate(25deg); }
+.tac-weapon-header { display:flex; align-items:center; gap:7px; padding-bottom:3px; border-bottom:1px solid #b3b9b446; line-height:17px; white-space:nowrap; }
+.tac-weapon-header>span { font-size:13px; flex:1; }.tac-weapon-header>i { color:#a0a6a282; font-weight:bold; font-size:21px; line-height:16px; letter-spacing:-4px; margin-right:12px; }
+.tac-weapon-header small { font-size:10px; color:var(--hud-gold); }
+.tac-ammunition { display:flex; align-items:center; justify-content:space-between; height:37px; }
+.tac-ammunition>div { display:flex; align-items:baseline; gap:6px; }.tac-ammunition strong { font-size:33px; font-weight:400; line-height:37px; font-variant-numeric:tabular-nums; }.tac-ammunition span { font-size:20px; color:#b3b6b3; }.tac-ammunition .is-low { color:#ef9a75; }
+.tac-ammunition>svg { width:91px; height:32px; opacity:.85; }.tac-reload { height:2px; background:#9da69d44; }.tac-reload i { height:100%; background:var(--hud-gold); display:block; }
+.tac-inventory { position:absolute; bottom:9px; left:50%; transform:translateX(-50%); display:flex; gap:2px; opacity:.75; }
+.tac-inventory button { width:65px; height:33px; position:relative; background:#171c205c; border:1px solid #adb6b42e; color:#e6e9e3; border-radius:2px; padding:4px 8px; }
+.tac-inventory button[aria-pressed=true] { border-color:#d0d6d3b0; background:#c5d1cc17; }.tac-inventory svg { width:100%; height:24px; }.tac-inventory kbd { position:absolute; right:3px; bottom:1px; font-size:9px; }
+@media (min-width:1600px) { .tac-vitals-equipment { bottom:36px; left:40px; }.tac-weapon { bottom:36px; right:34px; }.tac-match { top:20px; left:30px; } }
+@media (max-width:900px) { .tac-match { left:12px; top:10px; gap:6px; }.tac-crest { width:36px; height:42px; }.tac-match-body { width:160px; }.tac-score-bars { width:100px; }.tac-score-bars i { width:70px; }.tac-match time { font-size:12px; margin-left:6px; padding-left:5px; }.tac-mode { font-size:10px; }.tac-compass { width:32vw; }.tac-radar { right:8px; gap:6px; }.tac-vitals-equipment { left:16px; bottom:22px; gap:12px; }.tac-vitals { width:166px; padding:4px 8px; }.tac-equipment { gap:6px; }.tac-equipment button { width:32px; height:34px; }.tac-weapon { width:230px; right:16px; bottom:22px; }.tac-inventory button { width:46px; height:26px; }.tac-inventory { bottom:3px; }.tac-inventory svg { height:18px; } }
+.tactical-hud--mobile .tac-vitals-equipment { bottom:120px; left:12px; }.tactical-hud--mobile .tac-weapon { bottom:140px; right:12px; }.tactical-hud--mobile .tac-inventory { bottom:8px; }
+@media (max-width:650px) { .tac-compass { display:none; }.tac-equipment { display:none; }.tac-inventory { max-width:40vw; }.tac-inventory button { width:34px; }.tac-weapon { width:205px; }.tac-weapon-header>span { font-size:11px; }.tac-weapon-header>i { display:none; }.tac-utilities { gap:3px; }.tac-utilities button { width:24px; height:24px; } }
 
 @layer base {
   html,
@@ -89,3 +152,74 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+/* Pre-game menus */
+.simple-setup,
+.loadout-shell {
+  position: relative;
+  z-index: 1;
+  width: min(820px, 94vw);
+  max-height: 94dvh;
+  background: #10161f;
+  border: 1px solid #ffffff20;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.simple-setup { width: min(440px, 94vw); padding: 24px; overflow-y: auto; touch-action: pan-y; }
+.simple-setup h2, .loadout-header h2 { margin: 0; color: #f8fafc; font-size: 24px; font-weight: 700; }
+.setup-label { display: block; margin: 24px 0 10px; font-size: 13px; color: #cbd5e1; }
+.setup-difficulties { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.setup-difficulties button {
+  padding: 12px 8px; border: 1px solid #ffffff20; border-radius: 5px;
+  font-size: 14px; color: #cbd5e1; cursor: pointer;
+}
+.setup-difficulties button[aria-pressed=true] { border-color: #f59e0b; color: #fbbf24; background: #f59e0b0d; }
+.setup-map { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; font-size: 13px; color: #94a3b8; }
+.setup-map strong { color: #e2e8f0; font-weight: 500; }
+.setup-actions { display: flex; justify-content: space-between; align-items: center; gap: 16px; }
+.loadout-shell { display: flex; flex-direction: column; }
+.loadout-header { padding: 20px 24px 16px; }
+.loadout-steps { display: grid; grid-template-columns: repeat(4, 1fr); padding: 0 24px; border-bottom: 1px solid #ffffff15; flex-shrink: 0; }
+.loadout-steps button { padding: 12px 6px; border-bottom: 2px solid transparent; color: #94a3b8; font-size: 13px; cursor: pointer; }
+.loadout-steps button[aria-current] { color: #fbbf24; border-color: #f59e0b; }
+.loadout-content { padding: 20px 24px; overflow-y: auto; min-height: 0; touch-action: pan-y; }
+.loadout-slots { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.loadout-slots button { display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; text-align: left; background: #171f29; border: 1px solid #ffffff20; border-radius: 5px; cursor: pointer; }
+.loadout-slots button[aria-pressed=true] { border-color: #f59e0b; }
+.loadout-slots span { color: #94a3b8; font-size: 11px; }
+.loadout-slots strong { color: #f1f5f9; font-size: 12px; font-weight: 500; }
+.loadout-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.weapon-choice { position: relative; padding: 10px; border: 1px solid #ffffff18; border-radius: 5px; background: #171f29; text-align: center; cursor: pointer; }
+.weapon-choice:hover { border-color: #ffffff50; }
+.weapon-choice.selected { border-color: #f59e0b; }
+.choice-check { position: absolute; right: 6px; top: 6px; z-index: 1; padding: 2px; width: 21px; height: 21px; color: #fbbf24; background: #10161f; border-radius: 50%; }
+.weapon-photo { display: flex; align-items: center; justify-content: center; height: 100px; margin-bottom: 10px; background: #fff; border-radius: 3px; overflow: hidden; }
+.weapon-photo img { width: 100%; height: 100%; object-fit: contain; }
+.weapon-choice strong { display: block; color: #e2e8f0; font-size: 12px; font-weight: 500; }
+.grenade-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.grenade-photo { height: 140px; }
+.no-launcher { display: flex; align-items: center; gap: 8px; margin-top: 16px; padding: 6px 0; color: #cbd5e1; font-size: 13px; cursor: pointer; }
+.selection-dot { width: 14px; height: 14px; border: 1px solid #64748b; border-radius: 50%; }
+.no-launcher[aria-pressed=true] .selection-dot { border: 4px solid #f59e0b; }
+.loadout-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; border-top: 1px solid #ffffff15; flex-shrink: 0; }
+.loadout-back { padding: 10px 0; color: #cbd5e1; font-size: 13px; cursor: pointer; }
+.loadout-deploy { padding: 11px 24px; border-radius: 5px; background: #f59e0b; color: #10161f; font-size: 13px; font-weight: 700; cursor: pointer; }
+.loadout-deploy:hover { background: #fbbf24; }
+.simple-setup button, .loadout-shell button { touch-action: manipulation; }
+.simple-setup button:focus-visible, .loadout-shell button:focus-visible { outline: 2px solid #fde68a; outline-offset: 3px; }
+@media (max-width: 600px) {
+  .loadout-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .loadout-header { padding: 16px; }
+  .loadout-content, .loadout-footer { padding: 14px 16px; }
+  .loadout-steps { padding: 0 16px; }
+  .loadout-steps button { font-size: 12px; }
+}
+@media (max-height: 540px) {
+  .loadout-header { padding: 12px 20px 8px; }
+  .loadout-header h2 { font-size: 20px; }
+  .loadout-steps button { padding: 8px 6px; }
+  .loadout-content { padding: 12px 20px; }
+  .loadout-footer { padding: 10px 20px; }
+}
+/* Minimal tactical layout utilities */
+

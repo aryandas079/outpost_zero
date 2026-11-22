@@ -1,353 +1,905 @@
-import React, { useState } from 'react';
-import { ArrowLeft, Check, Settings, Volume2, VolumeX } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
 import {
-  DIFFICULTY_SPECS,
+  ArrowLeft,
+  Check,
+  Crosshair,
+  Info,
+  Radio,
+  RefreshCw,
+  Settings,
+  Shield,
+  Swords,
+  Trophy,
+  Users,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
+import {
   DifficultyId,
   GameSettings,
-  MAP_SPECS,
+  GrenadeId,
+  Loadout,
   MapId,
+  MAP_SPECS,
   MissionConfig,
+  WeaponId,
+  WEAPON_SPECS,
 } from '../game/types';
+import {
+  DEFAULT_LOADOUT,
+  GRENADES,
+  LAUNCHERS,
+  PRIMARY_WEAPONS,
+  SIDEARMS,
+} from '../game/loadout';
+import {
+  DEFAULT_MULTIPLAYER_SETTINGS,
+  DEFAULT_PLAYER_CALLSIGNS,
+  MultiplayerGameSettings,
+  PLAYER_COLORS,
+  PlayerColorId,
+} from '../game/multiplayer/types';
+import { parseRoomFromUrl } from '../game/multiplayer/networkManager';
 import { GraphicsSettings } from './GraphicsSettings';
+import { ControlsSettings } from './ControlsSettings';
+import { toAssetUrl } from '../utils/assets';
+import { WeaponCardVisual } from './WeaponSilhouette';
 
 interface TitleOverlayProps {
   bestScore: number;
   settings: GameSettings;
   initialDifficulty: DifficultyId;
   initialMap: MapId;
+  initialLoadout?: Loadout;
+  initialSection?: MainMenuSection;
   onStartMission: (config: MissionConfig) => void;
   onSensitivityChange: (val: number) => void;
   onToggleMute: () => void;
   onSettingsChange: (patch: Partial<GameSettings>) => void;
+  onOpenMultiplayer?: () => void;
+  onHostRoom?: (
+    profile: { name: string; color: PlayerColorId; loadout: Loadout },
+    settings: MultiplayerGameSettings,
+  ) => void;
+  onJoinRoom?: (
+    roomCode: string,
+    profile: { name: string; color: PlayerColorId; loadout: Loadout },
+  ) => void;
+  onLoadoutChange?: (loadout: Loadout) => void;
 }
 
-type HomeView = 'home' | 'setup' | 'settings';
+export type MainMenuSection = 'solo' | 'multiplayer' | 'armory' | 'settings' | 'intel';
 
 const DIFFICULTY_ORDER: DifficultyId[] = ['easy', 'normal', 'hard'];
-const MAP_ORDER: MapId[] = ['west'];
+const DIFFICULTY_LABELS: Record<DifficultyId, string> = {
+  easy: 'Easy',
+  normal: 'Medium',
+  hard: 'Hard',
+};
+
+const COLOR_KEYS: PlayerColorId[] = ['cyan', 'amber', 'emerald', 'rose'];
 
 export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   bestScore,
   settings,
   initialDifficulty,
   initialMap,
+  initialLoadout = DEFAULT_LOADOUT,
+  initialSection = 'solo',
   onStartMission,
   onSensitivityChange,
   onToggleMute,
   onSettingsChange,
+  onOpenMultiplayer,
+  onHostRoom,
+  onJoinRoom,
+  onLoadoutChange,
 }) => {
-  const [view, setView] = useState<HomeView>('home');
+  const [activeSection, setActiveSection] = useState<MainMenuSection>(initialSection);
+
+  // Solo Mission state
   const [difficulty, setDifficulty] = useState<DifficultyId>(initialDifficulty);
-  const [mapId, setMapId] = useState<MapId>(initialMap);
+  const [endlessMode, setEndlessMode] = useState(false);
+  const mapId = initialMap;
+
+  // Loadout state
+  const [loadout, setLoadout] = useState<Loadout>(initialLoadout);
+
+  // Armory state
+  const [armoryTab, setArmoryTab] = useState<'primary' | 'sidearm' | 'launcher' | 'grenades'>('primary');
+  const [editingPrimarySlot, setEditingPrimarySlot] = useState<0 | 1>(0);
+
+  // Settings sub-tab state
+  const [settingsTab, setSettingsTab] = useState<'audio' | 'graphics' | 'controls'>('audio');
+
+  // Multiplayer state
+  const [multiplayerTab, setMultiplayerTab] = useState<'host' | 'join'>('host');
+  const [callsign, setCallsign] = useState(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('opz_player_name') : null;
+    return saved || DEFAULT_PLAYER_CALLSIGNS[Math.floor(Math.random() * DEFAULT_PLAYER_CALLSIGNS.length)];
+  });
+  const [color, setColor] = useState<PlayerColorId>(() => {
+    const saved = typeof window !== 'undefined' ? (localStorage.getItem('opz_player_color') as PlayerColorId) : null;
+    return saved && PLAYER_COLORS[saved] ? saved : 'cyan';
+  });
+  const [joinCode, setJoinCode] = useState('');
+  const [networkSettings, setNetworkSettings] = useState<MultiplayerGameSettings>({ ...DEFAULT_MULTIPLAYER_SETTINGS });
+
+  // Auto-detect room from URL
+  useEffect(() => {
+    const fromUrl = parseRoomFromUrl();
+    if (fromUrl) {
+      setJoinCode(fromUrl);
+      setActiveSection('multiplayer');
+      setMultiplayerTab('join');
+    }
+  }, []);
+
+  const handleUpdateLoadout = (next: Loadout) => {
+    setLoadout(next);
+    onLoadoutChange?.(next);
+  };
+
+  const handleChoosePrimary = (weaponId: WeaponId) => {
+    const updated = [...loadout.primary] as [WeaponId, WeaponId];
+    const existingIdx = updated.indexOf(weaponId);
+    if (existingIdx !== -1) {
+      [updated[editingPrimarySlot], updated[existingIdx]] = [updated[existingIdx], updated[editingPrimarySlot]];
+    } else {
+      updated[editingPrimarySlot] = weaponId;
+    }
+    const next = { ...loadout, primary: updated };
+    handleUpdateLoadout(next);
+    setEditingPrimarySlot(editingPrimarySlot === 0 ? 1 : 0);
+  };
+
+  const handleRandomizeCallsign = () => {
+    const next = DEFAULT_PLAYER_CALLSIGNS[Math.floor(Math.random() * DEFAULT_PLAYER_CALLSIGNS.length)];
+    setCallsign(next);
+  };
+
+  const saveProfileLocally = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('opz_player_name', callsign);
+      localStorage.setItem('opz_player_color', color);
+    }
+  };
+
+  const handleHost = () => {
+    saveProfileLocally();
+    if (onHostRoom) {
+      onHostRoom({ name: callsign, color, loadout }, networkSettings);
+    } else {
+      onOpenMultiplayer?.();
+    }
+  };
+
+  const handleJoin = () => {
+    saveProfileLocally();
+    const clean = joinCode.trim();
+    if (clean) {
+      if (onJoinRoom) {
+        onJoinRoom(clean, { name: callsign, color, loadout });
+      } else {
+        onOpenMultiplayer?.();
+      }
+    }
+  };
+
+  const handleDeploySolo = () => {
+    onStartMission({
+      difficulty,
+      mapId,
+      loadout,
+    });
+  };
+
+  const playerColorSpec = PLAYER_COLORS[color] ?? PLAYER_COLORS.cyan;
 
   return (
-    <div
-      className="fixed inset-0 z-20 flex flex-col items-center justify-center select-none bg-[#0b1017]"
-      style={{
-        backgroundImage:
-          'radial-gradient(circle at 50% 34%, rgba(245, 158, 11, 0.09) 0%, rgba(18, 26, 38, 0.65) 45%, rgba(11, 16, 23, 1) 100%)',
-      }}
-    >
-      {/* Subtle static architectural hairline framing (no 3D map behind menu) */}
-      <div
-        className="absolute inset-0 pointer-events-none opacity-25"
-        style={{
-          backgroundImage:
-            'linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px)',
-          backgroundSize: '64px 64px',
-        }}
-      />
-
+    <div className="fixed inset-0 z-20 flex flex-col bg-[#080d14] text-slate-100 select-none overflow-hidden">
       {/* =====================================================================
-          1. SIMPLE HOME SCREEN: Logo + Name, Start Game, Settings, Best Score
-         ===================================================================== */}
-      {view === 'home' && (
-        <div className="relative z-10 flex flex-col items-center text-center px-6 py-4 w-full max-w-md max-h-[96dvh] overflow-y-auto">
-          {/* Game Logo + Title */}
-          <div className="mb-5 sm:mb-10 w-full flex justify-center">
-            <svg
-              viewBox="0 0 420 112"
-              className="w-full max-w-[390px] h-auto overflow-visible"
-              role="img"
-              aria-label="Outpost Zero"
-            >
-              {/* Geometric Tactical Sight Logo */}
-              <g transform="translate(8, 14)">
-                <polygon
-                  points="22,0 44,12 44,36 22,48 0,36 0,12"
-                  fill="none"
-                  stroke="#f59e0b"
-                  strokeWidth="2.5"
-                />
-                <polygon points="22,9 35,16 35,32 22,39 9,32 9,16" fill="#f59e0b" fillOpacity="0.18" />
-                <line x1="22" y1="0" x2="22" y2="11" stroke="#f59e0b" strokeWidth="2.2" />
-                <line x1="22" y1="37" x2="22" y2="48" stroke="#f59e0b" strokeWidth="2.2" />
-                <circle cx="22" cy="24" r="3.5" fill="#f8fafc" />
-              </g>
-
-              {/* Display Wordmark */}
-              <text
-                x="68"
-                y="52"
-                fill="#f8fafc"
-                fontFamily="Oxanium, sans-serif"
-                fontWeight="800"
-                fontSize="48"
-                letterSpacing="3"
-              >
-                OUTPOST
-              </text>
-              <text
-                x="70"
-                y="96"
-                fill="#f59e0b"
-                fontFamily="Oxanium, sans-serif"
-                fontWeight="700"
-                fontSize="36"
-                letterSpacing="11"
-              >
-                ZERO
-              </text>
-              <rect x="214" y="82" width="154" height="3" fill="#f59e0b" fillOpacity="0.55" />
-              <rect x="376" y="82" width="24" height="3" fill="#f8fafc" fillOpacity="0.85" />
-            </svg>
+          SIMPLE TOP NAVIGATION HEADER
+          ===================================================================== */}
+      <header className="shrink-0 h-14 border-b border-white/10 bg-[#0d1420]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-4 z-30">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-400 font-display font-black text-sm">
+            Ø
           </div>
-
-          {/* Primary Actions: Start Game + Settings */}
-          <div className="flex flex-col gap-3 w-full max-w-[272px] mb-8">
-            <button
-              type="button"
-              onClick={() => setView('setup')}
-              className="inline-flex items-center justify-center px-8 py-3.5 min-h-12 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-display font-bold text-base tracking-wide rounded-md transition-all whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
-            >
-              Start Game
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setView('settings')}
-              className="inline-flex items-center justify-center gap-2 px-6 py-3 min-h-11 bg-[#141c27] hover:bg-[#1b2635] border border-white/14 text-slate-100 font-medium text-sm rounded-md transition-colors whitespace-nowrap shrink-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
-            >
-              <Settings className="w-4 h-4 text-slate-300" />
-              <span>Settings</span>
-            </button>
-          </div>
-
-          {/* Best Score (Clean unboxed tabular readout) */}
-          <div className="flex items-baseline gap-3 text-sm">
-            <span className="text-slate-400 font-medium">Best Score</span>
-            <span className="font-display font-bold text-xl text-white font-mono-num">
-              {bestScore.toLocaleString()}
+          <span className="font-display font-black text-sm tracking-wider text-white">
+            OUTPOST ZERO
+          </span>
+          {typeof window !== 'undefined' && window.electronAPI?.isElectron ? (
+            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-sky-500/20 text-sky-300 border border-sky-400/30">
+              WINDOWS APP
             </span>
-          </div>
+          ) : (
+            <span className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium bg-white/5 text-slate-400 border border-white/10">
+              BROWSER
+            </span>
+          )}
         </div>
-      )}
+
+        {/* Section Tabs */}
+        <nav className="flex items-center gap-1 sm:gap-1.5" aria-label="Main Menu Sections">
+          <button
+            type="button"
+            onClick={() => setActiveSection('solo')}
+            className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-display font-bold transition-all cursor-pointer ${
+              activeSection === 'solo'
+                ? 'bg-amber-500 text-slate-950 shadow'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Solo
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSection('multiplayer')}
+            className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-display font-bold transition-all cursor-pointer ${
+              activeSection === 'multiplayer'
+                ? 'bg-cyan-500 text-slate-950 shadow'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Multiplayer
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSection('armory')}
+            className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-display font-bold transition-all cursor-pointer ${
+              activeSection === 'armory'
+                ? 'bg-amber-400/20 text-amber-300 border border-amber-400/40'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Armory
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveSection('settings')}
+            className={`px-3 py-1.5 rounded-md text-xs sm:text-sm font-display font-bold transition-all cursor-pointer ${
+              activeSection === 'settings'
+                ? 'bg-white/15 text-white border border-white/20'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            Settings
+          </button>
+        </nav>
+
+        {/* Right Controls */}
+        <div className="flex items-center gap-2">
+          {bestScore > 0 && (
+            <span className="hidden sm:inline-block text-xs font-mono text-amber-300">
+              Best: {bestScore.toLocaleString()}
+            </span>
+          )}
+
+          <button
+            type="button"
+            onClick={onToggleMute}
+            aria-label={settings.muted ? 'Unmute audio' : 'Mute audio'}
+            className="w-8 h-8 rounded bg-white/5 hover:bg-white/10 border border-white/10 flex items-center justify-center text-slate-300 hover:text-white cursor-pointer"
+          >
+            {settings.muted ? (
+              <VolumeX className="w-4 h-4 text-slate-400" />
+            ) : (
+              <Volume2 className="w-4 h-4 text-amber-400" />
+            )}
+          </button>
+        </div>
+      </header>
 
       {/* =====================================================================
-          2. MATCH SETUP SCREEN: Select Difficulty + Select Map
-         ===================================================================== */}
-      {view === 'setup' && (
-        <div className="relative z-10 flex items-center justify-center px-4 py-3 w-full max-h-[98dvh] overflow-y-auto">
-          <div className="pointer-events-auto w-full max-w-xl bg-[#10161f]/96 border border-white/14 rounded-lg p-4 sm:p-7 shadow-2xl">
-            {/* Top Navigation Header */}
-            <div className="flex items-center justify-between gap-4 pb-3 sm:pb-5 mb-4 sm:mb-6 border-b border-white/10">
-              <div>
-                <h2 className="font-display font-bold text-2xl text-white tracking-tight">
-                  Match Setup
-                </h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setView('home')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 min-h-10 text-xs font-medium text-slate-300 hover:text-white rounded-md hover:bg-white/6 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back</span>
-              </button>
+          MAIN SECTION CONTENT
+          ===================================================================== */}
+      <main className="flex-1 overflow-y-auto p-4 sm:p-6 flex items-center justify-center">
+        {/* ===================================================================
+            SECTION 1: SOLO MISSION (SIMPLE: EASY / MEDIUM / HARD)
+            =================================================================== */}
+        {activeSection === 'solo' && (
+          <div className="w-full max-w-md bg-[#0f1622]/98 border border-white/12 rounded-xl p-5 shadow-2xl space-y-5 animate-fadeIn">
+            <div>
+              <h2 className="font-display font-bold text-xl text-white">Solo Mission</h2>
             </div>
 
-            {/* Section 1: Select Difficulty */}
-            <div className="mb-6">
-              <div className="text-xs font-medium text-slate-300 mb-3">Select Difficulty</div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+            {/* Simple Difficulty: Easy, Medium, Hard */}
+            <div>
+              <label className="block text-xs text-slate-400 font-mono mb-2">Difficulty</label>
+              <div className="grid grid-cols-3 gap-2">
                 {DIFFICULTY_ORDER.map((id) => {
-                  const spec = DIFFICULTY_SPECS[id];
-                  const active = difficulty === id;
+                  const selected = difficulty === id;
                   return (
                     <button
                       key={id}
                       type="button"
                       onClick={() => setDifficulty(id)}
-                      aria-pressed={active}
-                      className={`text-left px-4 py-3.5 rounded-md border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-400 ${
-                        active
-                          ? 'bg-amber-500/15 border-amber-400 text-white'
-                          : 'bg-[#161f2b] border-white/10 text-slate-300 hover:border-white/25 hover:text-white'
+                      className={`py-3 px-2 rounded-lg border font-display font-bold text-sm text-center transition-all cursor-pointer ${
+                        selected
+                          ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                          : 'bg-[#141d2b] border-white/12 text-slate-300 hover:border-white/30'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="font-display font-bold text-base">{spec.label}</span>
-                        {active && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
-                      </div>
-                      <p className="text-xs text-slate-400 leading-snug">{spec.summary}</p>
+                      {DIFFICULTY_LABELS[id]}
                     </button>
                   );
                 })}
               </div>
             </div>
 
-            {/* Section 2: Select Map */}
-            <div className="mb-7">
-              <div className="text-xs font-medium text-slate-300 mb-3">Select Map</div>
-              <div className="grid grid-cols-1 gap-2.5">
-                {MAP_ORDER.map((id) => {
-                  const map = MAP_SPECS[id];
-                  const active = mapId === id;
+            {/* Simple Mode: 5 Waves vs Endless */}
+            <div>
+              <label className="block text-xs text-slate-400 font-mono mb-2">Game Mode</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEndlessMode(false)}
+                  className={`py-2.5 px-3 rounded-lg border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                    !endlessMode
+                      ? 'bg-white/15 border-white text-white shadow'
+                      : 'bg-[#141d2b] border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Standard (5 Waves)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEndlessMode(true)}
+                  className={`py-2.5 px-3 rounded-lg border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                    endlessMode
+                      ? 'bg-amber-400/20 border-amber-400 text-amber-300 shadow'
+                      : 'bg-[#141d2b] border-white/10 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  Endless Survival
+                </button>
+              </div>
+            </div>
+
+            {/* Simple Loadout Preview */}
+            <div className="p-3 bg-[#141d2b] border border-white/10 rounded-lg flex items-center justify-between text-xs font-mono">
+              <div>
+                <span className="text-slate-400 block text-[10px] uppercase">Loadout</span>
+                <span className="text-white font-semibold">
+                  {WEAPON_SPECS[loadout.primary[0]].shortLabel} · {WEAPON_SPECS[loadout.primary[1]].shortLabel} · {GRENADES[loadout.grenade].name}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection('armory')}
+                className="text-amber-400 hover:text-amber-300 underline underline-offset-2 cursor-pointer"
+              >
+                Change
+              </button>
+            </div>
+
+            {/* Deploy Action */}
+            <button
+              type="button"
+              onClick={handleDeploySolo}
+              className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-base tracking-wider uppercase rounded-lg shadow-[0_4px_20px_rgba(245,158,11,0.35)] transition-all cursor-pointer flex items-center justify-center gap-2"
+            >
+              <Crosshair className="w-5 h-5" />
+              <span>Start Mission</span>
+            </button>
+          </div>
+        )}
+
+        {/* ===================================================================
+            SECTION 2: MULTIPLAYER (SIMPLE: NAME, COLOR, MODE, START/JOIN)
+            =================================================================== */}
+        {activeSection === 'multiplayer' && (
+          <div className="w-full max-w-md bg-[#0f1622]/98 border border-white/12 rounded-xl p-5 shadow-2xl space-y-4 animate-fadeIn">
+            {/* Simple Top Tabs: Host vs Join */}
+            <div className="flex border-b border-white/12">
+              <button
+                type="button"
+                onClick={() => setMultiplayerTab('host')}
+                className={`flex-1 py-2 text-xs font-display font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                  multiplayerTab === 'host'
+                    ? 'border-cyan-400 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Host Match
+              </button>
+              <button
+                type="button"
+                onClick={() => setMultiplayerTab('join')}
+                className={`flex-1 py-2 text-xs font-display font-bold uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                  multiplayerTab === 'join'
+                    ? 'border-cyan-400 text-cyan-300'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Join Match
+              </button>
+            </div>
+
+            {/* Simple Operative Info */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-[11px] text-slate-400 font-mono mb-1">Callsign</label>
+                <div className="flex gap-1">
+                  <input
+                    type="text"
+                    maxLength={14}
+                    value={callsign}
+                    onChange={(e) => setCallsign(e.target.value)}
+                    className="flex-1 bg-[#141d2b] border border-white/15 focus:border-cyan-400 rounded px-2.5 py-1.5 text-xs text-white font-mono focus:outline-none"
+                    placeholder="Name"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRandomizeCallsign}
+                    title="Randomize"
+                    className="px-2 py-1.5 bg-[#1a2536] border border-white/12 rounded text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] text-slate-400 font-mono mb-1">Color</label>
+                <div className="flex gap-1.5 items-center h-[34px]">
+                  {COLOR_KEYS.map((k) => {
+                    const spec = PLAYER_COLORS[k];
+                    const selected = color === k;
+                    return (
+                      <button
+                        key={k}
+                        type="button"
+                        onClick={() => setColor(k)}
+                        className={`w-7 h-7 rounded-full flex items-center justify-center transition-all cursor-pointer ${
+                          selected ? 'ring-2 ring-white scale-110' : 'opacity-70 hover:opacity-100'
+                        }`}
+                        style={{ backgroundColor: spec.css }}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* HOST OPTIONS */}
+            {multiplayerTab === 'host' && (
+              <div className="space-y-4 pt-1">
+                {/* Simple Mode: Co-op vs Deathmatch */}
+                <div>
+                  <label className="block text-[11px] text-slate-400 font-mono mb-1.5">Game Mode</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setNetworkSettings({ ...networkSettings, mode: 'coop' })}
+                      className={`py-2 px-3 rounded-lg border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                        networkSettings.mode === 'coop'
+                          ? 'bg-amber-400/20 border-amber-400 text-amber-300 shadow'
+                          : 'bg-[#141d2b] border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      Co-op Survival
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNetworkSettings({ ...networkSettings, mode: 'deathmatch' })}
+                      className={`py-2 px-3 rounded-lg border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                        networkSettings.mode === 'deathmatch'
+                          ? 'bg-rose-400/20 border-rose-400 text-rose-300 shadow'
+                          : 'bg-[#141d2b] border-white/10 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      PvP Deathmatch
+                    </button>
+                  </div>
+                </div>
+
+                {/* Simple Settings: Easy / Medium / Hard */}
+                {networkSettings.mode === 'coop' ? (
+                  <div>
+                    <label className="block text-[11px] text-slate-400 font-mono mb-1.5">Difficulty</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {DIFFICULTY_ORDER.map((id) => (
+                        <button
+                          key={id}
+                          type="button"
+                          onClick={() => setNetworkSettings({ ...networkSettings, difficulty: id })}
+                          className={`py-2 rounded border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                            networkSettings.difficulty === id
+                              ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                              : 'bg-[#141d2b] border-white/10 text-slate-400'
+                          }`}
+                        >
+                          {DIFFICULTY_LABELS[id]}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-[11px] text-slate-400 font-mono mb-1.5">Score Limit</label>
+                    <div className="grid grid-cols-3 gap-1.5">
+                      {[10, 15, 25].map((kills) => (
+                        <button
+                          key={kills}
+                          type="button"
+                          onClick={() => setNetworkSettings({ ...networkSettings, killLimit: kills })}
+                          className={`py-2 rounded border font-mono text-xs font-semibold transition-all cursor-pointer ${
+                            networkSettings.killLimit === kills
+                              ? 'bg-rose-400/20 border-rose-400 text-rose-300'
+                              : 'bg-[#141d2b] border-white/10 text-slate-400'
+                          }`}
+                        >
+                          {kills} Kills
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={handleHost}
+                  className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-display font-bold text-sm tracking-wider uppercase rounded-lg shadow transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Create Squad Lobby</span>
+                </button>
+              </div>
+            )}
+
+            {/* JOIN OPTIONS */}
+            {multiplayerTab === 'join' && (
+              <div className="space-y-4 pt-1">
+                <div>
+                  <label className="block text-[11px] text-slate-400 font-mono mb-1">
+                    Room Code
+                  </label>
+                  <input
+                    type="text"
+                    value={joinCode}
+                    onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+                    placeholder="e.g. OPZ-7K2X"
+                    className="w-full bg-[#141d2b] border-2 border-white/15 focus:border-cyan-400 rounded-lg px-3 py-2.5 text-base font-mono tracking-widest text-white uppercase focus:outline-none text-center"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  disabled={!joinCode.trim()}
+                  onClick={handleJoin}
+                  className={`w-full py-3 font-display font-bold text-sm tracking-wider uppercase rounded-lg transition-all flex items-center justify-center gap-2 ${
+                    joinCode.trim()
+                      ? 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow cursor-pointer'
+                      : 'bg-white/10 text-slate-500 cursor-not-allowed'
+                  }`}
+                >
+                  <Users className="w-4 h-4" />
+                  <span>Connect to Squad</span>
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===================================================================
+            SECTION 3: ARMORY (SIMPLE: PRIMARY, SIDEARM, LAUNCHER, GRENADES)
+            =================================================================== */}
+        {activeSection === 'armory' && (
+          <div className="w-full max-w-2xl bg-[#0f1622]/98 border border-white/12 rounded-xl p-5 shadow-2xl space-y-4 animate-fadeIn">
+            <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
+              <h2 className="font-display font-bold text-lg text-white">Armory</h2>
+              <button
+                type="button"
+                onClick={() => setActiveSection('solo')}
+                className="text-xs font-display font-bold px-3 py-1 bg-amber-500 hover:bg-amber-400 text-slate-950 rounded cursor-pointer"
+              >
+                Done
+              </button>
+            </div>
+
+            {/* Simple Category Tabs */}
+            <div className="grid grid-cols-4 gap-1 border-b border-white/10 pb-2">
+              <button
+                type="button"
+                onClick={() => setArmoryTab('primary')}
+                className={`py-1.5 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  armoryTab === 'primary' ? 'bg-amber-400/20 text-amber-300' : 'text-slate-400'
+                }`}
+              >
+                Primary
+              </button>
+              <button
+                type="button"
+                onClick={() => setArmoryTab('sidearm')}
+                className={`py-1.5 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  armoryTab === 'sidearm' ? 'bg-amber-400/20 text-amber-300' : 'text-slate-400'
+                }`}
+              >
+                Sidearm
+              </button>
+              <button
+                type="button"
+                onClick={() => setArmoryTab('launcher')}
+                className={`py-1.5 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  armoryTab === 'launcher' ? 'bg-amber-400/20 text-amber-300' : 'text-slate-400'
+                }`}
+              >
+                Launcher
+              </button>
+              <button
+                type="button"
+                onClick={() => setArmoryTab('grenades')}
+                className={`py-1.5 rounded text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  armoryTab === 'grenades' ? 'bg-amber-400/20 text-amber-300' : 'text-slate-400'
+                }`}
+              >
+                Grenade
+              </button>
+            </div>
+
+            {/* PRIMARY WEAPONS */}
+            {armoryTab === 'primary' && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  {loadout.primary.map((id, index) => {
+                    const active = editingPrimarySlot === index;
+                    return (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => setEditingPrimarySlot(index as 0 | 1)}
+                        className={`p-2 rounded border text-left cursor-pointer ${
+                          active
+                            ? 'bg-amber-400/20 border-amber-400 text-amber-300'
+                            : 'bg-[#141d2b] border-white/10 text-slate-400'
+                        }`}
+                      >
+                        <span className="text-[10px] block font-mono">Slot {index + 1}</span>
+                        <span className="text-xs font-bold text-white font-display">
+                          {WEAPON_SPECS[id].shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {PRIMARY_WEAPONS.map((id) => {
+                    const spec = WEAPON_SPECS[id];
+                    const isSelected = loadout.primary[editingPrimarySlot] === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => handleChoosePrimary(id)}
+                        className={`p-2.5 rounded-lg border text-left cursor-pointer flex flex-col items-center justify-center transition-all ${
+                          isSelected
+                            ? 'bg-amber-500/20 border-amber-400 shadow'
+                            : 'bg-[#141d2b] border-white/10 hover:border-white/25'
+                        }`}
+                      >
+                        <div className="h-12 flex items-center justify-center mb-1">
+                          <WeaponCardVisual
+                            weaponId={id}
+                            alt={spec.name}
+                            imageUrl={toAssetUrl(`weapons/${id}.png`)}
+                          />
+                        </div>
+                        <span className="text-xs font-display font-bold text-white">
+                          {spec.shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* SIDEARMS */}
+            {armoryTab === 'sidearm' && (
+              <div className="grid grid-cols-3 gap-2">
+                {SIDEARMS.map((id) => {
+                  const spec = WEAPON_SPECS[id];
+                  const selected = loadout.sidearm === id;
                   return (
                     <button
                       key={id}
                       type="button"
-                      onClick={() => setMapId(id)}
-                      aria-pressed={active}
-                      className={`flex items-center gap-4 text-left p-4 rounded-md border transition-colors cursor-pointer focus-visible:outline-2 focus-visible:outline-amber-400 ${
-                        active
-                          ? 'bg-amber-500/15 border-amber-400 text-white'
-                          : 'bg-[#161f2b] border-white/10 text-slate-300 hover:border-white/25 hover:text-white'
+                      onClick={() => handleUpdateLoadout({ ...loadout, sidearm: id })}
+                      className={`p-3 rounded-lg border text-center cursor-pointer transition-all ${
+                        selected
+                          ? 'bg-amber-500/20 border-amber-400 shadow'
+                          : 'bg-[#141d2b] border-white/10 hover:border-white/25'
                       }`}
                     >
-                      {/* Clean Architectural Top-Down Blueprint Thumbnail of WEST */}
-                      <div className="w-24 h-16 rounded bg-[#2a241b] border border-white/12 shrink-0 overflow-hidden flex items-center justify-center">
-                        <svg viewBox="0 0 120 80" className="w-full h-full" aria-hidden="true">
-                          <rect width="120" height="80" fill="#7c6848" />
-                          {/* Main Street dirt road */}
-                          <rect x="16" y="34" width="90" height="14" fill="#a28658" />
-                          {/* Railroad on left */}
-                          <line x1="11" y1="0" x2="11" y2="80" stroke="#3c342b" strokeWidth="3.5" strokeDasharray="2 2" />
-                          <rect x="14" y="48" width="7" height="16" fill="#3a291c" />
-                          {/* North buildings + Corral + Barn */}
-                          <polygon points="48,10 60,10 64,17 60,24 48,24 44,17" fill="none" stroke="#c8b28c" strokeWidth="1.2" />
-                          <rect x="65" y="12" width="16" height="9" fill="#382c22" />
-                          <rect x="28" y="24" width="14" height="10" fill="#6b4428" />
-                          <rect x="43" y="25" width="10" height="9" fill="#823428" />
-                          <rect x="59" y="25" width="10" height="9" fill="#3d3024" />
-                          <rect x="71" y="25" width="10" height="9" fill="#4f3b2a" />
-                          <rect x="83" y="26" width="8" height="8" fill="#7c5636" />
-                          {/* Water tower */}
-                          <circle cx="96" cy="18" r="4" fill="#4e3824" />
-                          {/* South buildings */}
-                          <rect x="28" y="49" width="14" height="10" fill="#785334" />
-                          <rect x="48" y="49" width="10" height="9" fill="#7e5b3a" />
-                          <rect x="60" y="49" width="8" height="9" fill="#3c2c20" />
-                          <rect x="70" y="49" width="11" height="10" fill="#8d3328" />
-                          <rect x="83" y="50" width="8" height="9" fill="#7b5738" />
-                          {/* East square row */}
-                          <rect x="99" y="31" width="9" height="16" fill="#8a4c34" />
-                          <rect x="99" y="50" width="9" height="9" fill="#3b2b20" />
-                          <rect x="99" y="61" width="9" height="10" fill="#765234" />
-                        </svg>
+                      <div className="h-14 flex items-center justify-center mb-1">
+                        <WeaponCardVisual
+                          weaponId={id}
+                          alt={spec.name}
+                          imageUrl={toAssetUrl(`weapons/${id}.png`)}
+                        />
                       </div>
-
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center justify-between gap-2 mb-0.5">
-                          <div className="flex items-baseline gap-2.5">
-                            <span className="font-display font-bold text-lg tracking-wider text-white">
-                              {map.name}
-                            </span>
-                            <span className="text-xs text-amber-300 font-medium">{map.subtitle}</span>
-                          </div>
-                          {active && <Check className="w-4 h-4 text-amber-400 shrink-0" />}
-                        </div>
-                        <p className="text-xs text-slate-400 leading-relaxed">{map.details}</p>
-                      </div>
+                      <span className="text-xs font-display font-bold text-white">
+                        {spec.shortLabel}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-            </div>
+            )}
 
-            {/* Launch Match Action */}
-            <button
-              type="button"
-              onClick={() => onStartMission({ difficulty, mapId })}
-              className="w-full py-3.5 min-h-12 bg-amber-500 hover:bg-amber-400 active:scale-[0.99] text-slate-950 font-display font-bold text-base tracking-wide rounded-md transition-all cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-300"
-            >
-              Play {MAP_SPECS[mapId].name} · {DIFFICULTY_SPECS[difficulty].label}
-            </button>
+            {/* LAUNCHERS */}
+            {armoryTab === 'launcher' && (
+              <div className="space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  {LAUNCHERS.map((id) => {
+                    const spec = WEAPON_SPECS[id];
+                    const selected = loadout.launcher === id;
+                    return (
+                      <button
+                        key={id}
+                        type="button"
+                        onClick={() => handleUpdateLoadout({ ...loadout, launcher: id })}
+                        className={`p-3 rounded-lg border text-center cursor-pointer transition-all ${
+                          selected
+                            ? 'bg-amber-500/20 border-amber-400 shadow'
+                            : 'bg-[#141d2b] border-white/10 hover:border-white/25'
+                        }`}
+                      >
+                        <div className="h-14 flex items-center justify-center mb-1">
+                          <WeaponCardVisual
+                            weaponId={id}
+                            alt={spec.name}
+                            imageUrl={toAssetUrl(`weapons/${id}.png`)}
+                          />
+                        </div>
+                        <span className="text-xs font-display font-bold text-white">
+                          {spec.shortLabel}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleUpdateLoadout({ ...loadout, launcher: null })}
+                  className={`w-full py-2 rounded text-xs font-mono transition-colors cursor-pointer ${
+                    loadout.launcher === null
+                      ? 'bg-amber-400/20 border border-amber-400 text-amber-300 font-bold'
+                      : 'bg-[#141d2b] border border-white/10 text-slate-400'
+                  }`}
+                >
+                  No Launcher (Faster Sprint)
+                </button>
+              </div>
+            )}
+
+            {/* GRENADES */}
+            {armoryTab === 'grenades' && (
+              <div className="grid grid-cols-4 gap-2">
+                {(Object.keys(GRENADES) as GrenadeId[]).map((id) => {
+                  const spec = GRENADES[id];
+                  const selected = loadout.grenade === id;
+                  return (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => handleUpdateLoadout({ ...loadout, grenade: id })}
+                      className={`p-2.5 rounded-lg border text-center cursor-pointer transition-all ${
+                        selected
+                          ? 'bg-amber-500/20 border-amber-400 shadow'
+                          : 'bg-[#141d2b] border-white/10 hover:border-white/25'
+                      }`}
+                    >
+                      <div className="h-12 flex items-center justify-center mb-1">
+                        <WeaponCardVisual
+                          weaponId={id}
+                          alt={spec.name}
+                          imageUrl={toAssetUrl(`weapons/${id}.png`)}
+                        />
+                      </div>
+                      <span className="text-xs font-display font-bold text-white">
+                        {spec.name}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
-        </div>
-      )}
+        )}
 
-      {/* =====================================================================
-          3. HOME SETTINGS PANEL
-         ===================================================================== */}
-      {view === 'settings' && (
-        <div className="relative z-10 flex items-center justify-center px-4 py-3 w-full max-h-[98dvh] overflow-y-auto">
-          <div className="pointer-events-auto w-full max-w-md bg-[#10161f]/96 border border-white/14 rounded-lg p-5 sm:p-7 shadow-2xl">
-            <div className="flex items-center justify-between gap-4 pb-3 sm:pb-5 mb-4 sm:mb-6 border-b border-white/10">
-              <h2 className="font-display font-bold text-2xl text-white tracking-tight">
-                Settings
-              </h2>
+        {/* ===================================================================
+            SECTION 4: SETTINGS (SIMPLE: SENSITIVITY, SOUND, GRAPHICS, KEYS)
+            =================================================================== */}
+        {activeSection === 'settings' && (
+          <div className="w-full max-w-md bg-[#0f1622]/98 border border-white/12 rounded-xl p-5 shadow-2xl space-y-4 animate-fadeIn">
+            <h2 className="font-display font-bold text-lg text-white">Settings</h2>
+
+            {/* Simple Sub-tabs */}
+            <div className="flex border-b border-white/10 pb-1">
               <button
                 type="button"
-                onClick={() => setView('home')}
-                className="inline-flex items-center gap-1.5 px-3 py-2 min-h-10 text-xs font-medium text-slate-300 hover:text-white rounded-md hover:bg-white/6 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                onClick={() => setSettingsTab('audio')}
+                className={`flex-1 py-1 text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  settingsTab === 'audio' ? 'text-amber-300 border-b-2 border-amber-400' : 'text-slate-400'
+                }`}
               >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Back</span>
+                Aim & Audio
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('graphics')}
+                className={`flex-1 py-1 text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  settingsTab === 'graphics' ? 'text-amber-300 border-b-2 border-amber-400' : 'text-slate-400'
+                }`}
+              >
+                Graphics
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('controls')}
+                className={`flex-1 py-1 text-xs font-mono font-semibold transition-all cursor-pointer ${
+                  settingsTab === 'controls' ? 'text-amber-300 border-b-2 border-amber-400' : 'text-slate-400'
+                }`}
+              >
+                Keybindings
               </button>
             </div>
 
-            <div className="space-y-5 mb-7">
-              <div>
-                <div className="flex items-center justify-between text-xs mb-2">
-                  <label htmlFor="home-sens-slider" className="text-slate-300 font-medium">
-                    Mouse Sensitivity
-                  </label>
-                  <span className="font-mono-num text-amber-300 font-semibold">
-                    {settings.sensitivity.toFixed(2)}x
-                  </span>
+            {settingsTab === 'audio' && (
+              <div className="space-y-3">
+                <div className="p-3 bg-[#141d2b] border border-white/10 rounded-lg space-y-2">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 font-medium">Mouse Sensitivity</span>
+                    <span className="font-mono text-amber-300 font-bold">
+                      {settings.sensitivity.toFixed(2)}x
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0.2}
+                    max={3.0}
+                    step={0.05}
+                    value={settings.sensitivity}
+                    onChange={(e) => onSensitivityChange(parseFloat(e.target.value))}
+                    className="w-full accent-amber-500 cursor-pointer h-1.5"
+                  />
                 </div>
-                <input
-                  id="home-sens-slider"
-                  type="range"
-                  min={0.35}
-                  max={2.2}
-                  step={0.05}
-                  value={settings.sensitivity}
-                  onChange={(e) => onSensitivityChange(parseFloat(e.target.value))}
-                  className="w-full accent-amber-500 cursor-pointer"
-                />
-              </div>
 
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-slate-300 font-medium">Sound Effects</span>
-                <button
-                  type="button"
-                  onClick={onToggleMute}
-                  className="inline-flex items-center gap-2 px-3.5 py-2 min-h-10 text-xs font-medium text-slate-200 bg-[#18212d] border border-white/12 rounded-md hover:bg-[#202c3c] transition-colors cursor-pointer whitespace-nowrap shrink-0"
-                >
-                  {settings.muted ? (
-                    <VolumeX className="w-4 h-4 text-slate-400" />
-                  ) : (
-                    <Volume2 className="w-4 h-4 text-amber-400" />
-                  )}
-                  <span>{settings.muted ? 'Muted' : 'Enabled'}</span>
-                </button>
+                <div className="p-3 bg-[#141d2b] border border-white/10 rounded-lg flex items-center justify-between text-xs">
+                  <span className="text-slate-300 font-medium">Sound Effects</span>
+                  <button
+                    type="button"
+                    onClick={onToggleMute}
+                    className="px-3 py-1 rounded border font-mono transition-colors cursor-pointer"
+                    style={{
+                      backgroundColor: !settings.muted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                      borderColor: !settings.muted ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)',
+                      color: !settings.muted ? '#6ee7b7' : '#fca5a5',
+                    }}
+                  >
+                    {!settings.muted ? 'Enabled' : 'Muted'}
+                  </button>
+                </div>
               </div>
+            )}
 
+            {settingsTab === 'graphics' && (
               <GraphicsSettings settings={settings} onChange={onSettingsChange} />
-            </div>
+            )}
 
-            <button
-              type="button"
-              onClick={() => setView('home')}
-              className="w-full py-3 min-h-11 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm tracking-wide rounded-md transition-colors cursor-pointer"
-            >
-              Done
-            </button>
+            {settingsTab === 'controls' && (
+              <ControlsSettings settings={settings} onChange={onSettingsChange} />
+            )}
           </div>
-        </div>
-      )}
+        )}
+      </main>
     </div>
   );
 };

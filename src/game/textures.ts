@@ -27,6 +27,7 @@ export interface ProceduralTextures {
   tacticalSleeveBump: THREE.CanvasTexture;
   tacticalGloveColor: THREE.CanvasTexture;
   tacticalGloveNormal: THREE.CanvasTexture;
+  weaponMarkings: THREE.CanvasTexture;
   humanSkinColor: THREE.CanvasTexture;
   humanSkinNormal: THREE.CanvasTexture;
   muzzleFlame: THREE.CanvasTexture;
@@ -990,7 +991,7 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
 
   // Tactical Combat Sleeve Ripstop Fabric
   const [tsCanvas, tsCtx] = makeCanvas(256, 256);
-  tsCtx.fillStyle = '#363b36';
+  tsCtx.fillStyle = '#43464a';
   tsCtx.fillRect(0, 0, 256, 256);
   tsCtx.strokeStyle = 'rgba(72, 78, 70, 0.36)';
   tsCtx.lineWidth = 1;
@@ -1036,29 +1037,21 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   tacticalSleeveBump.repeat.set(2, 2);
   tacticalSleeveBump.anisotropy = aniso;
 
-  // 2F. Tactical Coyote-Tan Suede & Carbon-Weave Combat Gloves (Color + Normal)
+  // Seamless charcoal leather. Stitching is placed on the actual glove geometry.
   const glvRng = createRng(694);
   const [glvCanvas, glvCtx] = makeCanvas(256, 256);
   const [glvHCanvas, glvHCtx] = makeCanvas(256, 256);
-  glvCtx.fillStyle = '#8a7e68';
+  glvCtx.fillStyle = '#34373a';
   glvCtx.fillRect(0, 0, 256, 256);
   glvHCtx.fillStyle = '#808080';
   glvHCtx.fillRect(0, 0, 256, 256);
-  // Subtle micro-suede weave & stitched reinforcement seams
-  for (let y = 0; y < 256; y += 4) {
-    for (let x = 0; x < 256; x += 4) {
-      const alt = ((x + y) >> 2) % 2 === 0;
-      glvCtx.fillStyle = alt ? 'rgba(64, 56, 44, 0.14)' : 'rgba(176, 164, 140, 0.10)';
-      glvCtx.fillRect(x, y, 4, 4);
-      glvHCtx.fillStyle = alt ? '#727272' : '#8e8e8e';
-      glvHCtx.fillRect(x, y, 4, 4);
-    }
+  for (let i = 0; i < 22000; i++) {
+    const x = glvRng()*256, y = glvRng()*256, r = 0.25+glvRng()*0.8;
+    glvCtx.fillStyle = glvRng()>0.5 ? 'rgba(12,15,18,0.16)' : 'rgba(126,129,130,0.13)';
+    glvCtx.beginPath(); glvCtx.ellipse(x,y,r,r*0.65,glvRng()*Math.PI,0,Math.PI*2); glvCtx.fill();
+    glvHCtx.fillStyle = glvRng()>0.5 ? '#909090' : '#747474';
+    glvHCtx.fillRect(x,y,r,r);
   }
-  glvCtx.strokeStyle = 'rgba(42, 38, 32, 0.55)';
-  glvCtx.lineWidth = 2;
-  glvCtx.setLineDash([6, 4]);
-  glvCtx.strokeRect(18, 18, 220, 220);
-  glvCtx.setLineDash([]);
   addSubtleGrain(glvCtx, 256, 256, 0.06, 2, glvRng);
   addSubtleGrain(glvHCtx, 256, 256, 0.14, 2, glvRng);
 
@@ -1068,6 +1061,17 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   tacticalGloveColor.wrapT = THREE.RepeatWrapping;
   tacticalGloveColor.anisotropy = aniso;
   const tacticalGloveNormal = heightCanvasToNormalTexture(glvHCanvas, 1.5, aniso, 1, 1);
+
+  // A shared transparent decal atlas avoids stamping repeated text into the metal grain.
+  const [markCanvas,markCtx]=makeCanvas(1024,384);
+  ['M4A1   CAL. 5.56 × 45','17    AUSTRIA    9 × 19','M249   5.56 MM   OZ-0148','RPG-7   40 MM','M67   FRAG','OUTPOST   //   07'].forEach((label,row)=>{
+    markCtx.font='32px monospace';
+    markCtx.fillStyle=row===4?'#c6a45d':'#b2b7b4';
+    markCtx.fillText(label,12,row*64+42);
+  });
+  const weaponMarkings=new THREE.CanvasTexture(markCanvas);
+  weaponMarkings.colorSpace=THREE.SRGBColorSpace;
+  weaponMarkings.anisotropy=aniso;
 
   // 2G. Realistic Human Skin PBR Set (Warm Sun-Tanned Complexion, Subsurface Mottling, Fine Pores & Knuckle Creases)
   const skinRng = createRng(709);
@@ -1975,6 +1979,7 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     tacticalSleeveBump,
     tacticalGloveColor,
     tacticalGloveNormal,
+    weaponMarkings,
     humanSkinColor,
     humanSkinNormal,
     muzzleFlame,
@@ -2035,6 +2040,7 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
       tacticalSleeveBump.dispose();
       tacticalGloveColor.dispose();
       tacticalGloveNormal.dispose();
+      weaponMarkings.dispose();
       humanSkinColor.dispose();
       humanSkinNormal.dispose();
       muzzleFlame.dispose();

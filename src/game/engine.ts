@@ -1,3 +1,4 @@
+import { DEFAULT_LOADOUT, inventoryWeapons, normalizeLoadout, GRENADES } from './loadout';
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { AdaptiveRenderQuality } from './renderQuality';
@@ -20,9 +21,15 @@ import {
   KillFeedEntry,
   MapId,
   MissionConfig,
+  MissionMultiplayerConfig,
   WEAPON_SPECS,
   WeaponId,
+  Loadout,
+  GrenadeId,
 } from './types';
+import { NetworkManager } from './multiplayer/networkManager';
+import { RemotePlayerManager } from './multiplayer/remotePlayerRigs';
+import { NetworkMessage, PLAYER_COLORS } from './multiplayer/types';
 import { FirstPersonWeaponRig } from './weapon';
 
 // Pre-allocated scratch math helpers (zero per-frame GC)
@@ -157,11 +164,11 @@ const WEATHER_PRESETS: Record<WeatherKind, WeatherPreset> = {
     sunStrength: 0.64,
     fogColor: new THREE.Color(0xc8a77e),
     fogDensity: 0.0033,
-    sunLightColor: new THREE.Color(0xffdba2),
-    sunLightIntensity: 1.38,
-    hemiSkyColor: new THREE.Color(0x74a8dc),
-    hemiGroundColor: new THREE.Color(0x6b4a2b),
-    hemiIntensity: 0.48,
+    sunLightColor: new THREE.Color(0xffead1),
+    sunLightIntensity: 1.52,
+    hemiSkyColor: new THREE.Color(0xb3cce5),
+    hemiGroundColor: new THREE.Color(0xa18164),
+    hemiIntensity: 0.62,
     rimColor: new THREE.Color(0x6c9fd4),
     rimIntensity: 0.22,
     saloonIntensity: 3.0,
@@ -437,6 +444,15 @@ export class OutpostGameEngine {
   };
   private currentWeatherWind = 0.32;
 
+  // Multiplayer Networking & Remote Operatives
+  private networkManager: NetworkManager | null = null;
+  private remotePlayers: RemotePlayerManager | null = null;
+  private multiplayerConfig: MissionMultiplayerConfig | null = null;
+  private networkBroadcastTimer = 0;
+  private enemySyncTimer = 0;
+  private matchTimeRemaining = 0;
+  private respawnTimer = 0;
+
   // Object pools & atmospheric VFX
   private readonly tracers: TracerItem[] = [];
   private readonly particles: ParticleItem[] = [];
@@ -546,14 +562,15 @@ export class OutpostGameEngine {
 
   // Weapon & Optical Sniper Scope state
   private weaponId: WeaponId = 'carbine';
-  private ammoMap: Record<WeaponId, number> = {
-    carbine: WEAPON_SPECS.carbine.magSize,
-    railpistol: WEAPON_SPECS.railpistol.magSize,
-  };
-  private reserveMap: Record<WeaponId, number> = {
-    carbine: WEAPON_SPECS.carbine.reserveMax,
-    railpistol: WEAPON_SPECS.railpistol.reserveMax,
-  };
+  private loadout: Loadout = normalizeLoadout(DEFAULT_LOADOUT);
+  private ammoMap = Object.fromEntries(Object.values(WEAPON_SPECS).map(s => [s.id, s.magSize])) as Record<WeaponId, number>;
+  private reserveMap = Object.fromEntries(Object.values(WEAPON_SPECS).map(s => [s.id, s.reserveMax])) as Record<WeaponId, number>;
+  private grenadesRemaining = 3;
+  private grenadeCooldown = 0;
+  private pendingGrenade: {kind: GrenadeId; delay: number} | null = null;
+  private ordnance: { mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>; velocity: THREE.Vector3; fuse: number; kind: GrenadeId | 'rocket'; source: WeaponId | GrenadeId; radius: number; damage: number }[] = [];
+  private zones: { mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>; kind: 'smoke' | 'molotov'; life: number; pulse: number; radius: number }[] = [];
+  private stunnedEnemies = new Map<number, number>();
   private fireCooldown = 0;
   private reloading = false;
   private reloadTimer = 0;
@@ -625,7 +642,7 @@ export class OutpostGameEngine {
   private lastDragY = 0;
   private lookDeltaX = 0;
   private lookDeltaY = 0;
-  private settings: GameSettings = { ...DEFAULT_GAME_SETTINGS };
+  private settings: GameSettings = { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_GAME_SETTINGS.controls } };
 
   // Loop & lifecycle
   private frameId = 0;
@@ -1300,16 +1317,182 @@ export class OutpostGameEngine {
   // =========================================================================
   // PUBLIC CONTROLS (CALLED BY REACT GAME SHELL)
   // =========================================================================
+  public attachNetworkManager(nm: NetworkManager | null) {
+    this.networkManager = nm;
+    if (nm) {
+      nm.setCallbacks({
+        onRemoteMessage: (msg, senderId) => this.handleNetworkMessage(msg, senderId),
+      });
+    }
+  }
+
+  private handleNetworkMessage(msg: NetworkMessage, senderId: string) {
+    if (!this.remotePlayers && this.phase === 'playing') {
+      this.remotePlayers = new RemotePlayerManager(this.scene, this.textures);
+    }
+    if (!this.remotePlayers) return;
+
+    switch (msg.type) {
+      case 'player-state':
+        this.remotePlayers.updateNetworkState(msg.state);
+        break;
+      case 'player-shoot':
+        this.remotePlayers.triggerShot(
+          msg.playerId,
+          msg.weaponId,
+          new THREE.Vector3(...msg.origin),
+          new THREE.Vector3(...msg.target),
+        );
+        this.spawnTracer(
+          new THREE.Vector3(...msg.origin),
+          new THREE.Vector3(...msg.target),
+          WEAPON_SPECS[msg.weaponId]?.tracerColor ?? 0xffb347,
+        );
+        if (msg.weaponId === 'carbine') {
+          this.audio.playCarbineShot();
+        } else {
+          this.audio.playRailShot();
+        }
+        break;
+      case 'player-damage':
+        if (msg.targetId === this.networkManager?.localPlayerId) {
+          this.applyPlayerDamage(msg.amount, msg.attackerId, msg.attackerName, msg.weaponId, msg.isHeadshot);
+        } else {
+          this.remotePlayers.triggerDamage(msg.targetId, msg.amount, msg.isHeadshot);
+        }
+        break;
+      case 'player-killed':
+        this.killFeed.unshift({
+          id: Date.now() + Math.random(),
+          killer: msg.killerName,
+          victim: msg.victimName,
+          weapon: msg.weaponId,
+          headshot: msg.isHeadshot,
+          ttl: 4.5,
+        });
+        if (this.killFeed.length > 5) this.killFeed.pop();
+        if (msg.victimId !== this.networkManager?.localPlayerId) {
+          this.remotePlayers.triggerKilled(msg.victimId);
+        }
+        if (msg.killerId === this.networkManager?.localPlayerId) {
+          this.score += 150;
+          this.eliminations++;
+          if (msg.isHeadshot) this.headshots++;
+          this.audio.playHitMarker(msg.isHeadshot, true);
+        }
+        break;
+      case 'player-respawn':
+        this.remotePlayers.triggerRespawn(msg.playerId, new THREE.Vector3(...msg.pos));
+        break;
+      case 'enemy-damage':
+        if (this.multiplayerConfig?.isHost) {
+          const enemy = this.enemies.find((e) => e.id === msg.enemyId && e.alive);
+          if (enemy) {
+            enemy.hp -= msg.amount;
+            if (enemy.hp <= 0) {
+              enemy.alive = false;
+              enemy.deathTimer = 0;
+              this.score += enemy.scoreValue;
+              this.killFeed.unshift({
+                id: Date.now() + Math.random(),
+                killer: this.networkManager?.players.find((p) => p.id === msg.shooterId)?.name ?? 'Operative',
+                victim: enemy.displayName,
+                weapon: msg.weaponId,
+                headshot: msg.isHeadshot,
+                ttl: 4.5,
+              });
+              if (this.killFeed.length > 5) this.killFeed.pop();
+            }
+          }
+        }
+        break;
+      case 'enemy-sync':
+        if (!this.multiplayerConfig?.isHost) {
+          if (msg.wave !== this.wave) {
+            this.wave = msg.wave;
+            this.waveBanner = `WAVE ${msg.wave}`;
+            this.waveBannerTimer = 2.5;
+          }
+          for (const netE of msg.enemies) {
+            let localE = this.enemies.find((e) => e.id === netE.id);
+            if (!localE && netE.alive) {
+              localE = this.enemyFactory.createEnemy(netE.kind, new THREE.Vector3(...netE.pos), 1);
+              localE.id = netE.id;
+              this.scene.add(localE.root);
+              this.enemies.push(localE);
+            }
+            if (localE) {
+              localE.root.position.set(netE.pos[0], netE.pos[1], netE.pos[2]);
+              localE.root.rotation.y = netE.yaw;
+              localE.hp = netE.hp;
+              localE.maxHp = netE.maxHp;
+              localE.alive = netE.alive;
+              if (!netE.alive && localE.root.parent) {
+                this.scene.remove(localE.root);
+              }
+            }
+          }
+        }
+        break;
+      case 'wave-start':
+        this.wave = msg.wave;
+        this.waveBanner = `WAVE ${msg.wave}`;
+        this.waveBannerTimer = 2.5;
+        break;
+    }
+  }
+
   public startMission(config?: Partial<MissionConfig>) {
     this.audio.unlock();
     if (config?.difficulty) this.difficulty = config.difficulty;
     if (config?.mapId) this.mapId = config.mapId;
+    this.loadout = normalizeLoadout(config?.loadout ?? this.loadout);
     this.endless = false;
     this.resetCombatState();
     this.frameMetrics.reset();
     this.phase = 'playing';
     this.weaponRig.root.visible = true;
-    this.startWave(1);
+
+    if (config?.multiplayer) {
+      this.multiplayerConfig = config.multiplayer;
+      if (!this.remotePlayers) {
+        this.remotePlayers = new RemotePlayerManager(this.scene, this.textures);
+      }
+      if (this.networkManager) {
+        for (const p of this.networkManager.players) {
+          if (p.id !== this.networkManager.localPlayerId) {
+            this.remotePlayers.addOrUpdatePlayer(p);
+          }
+        }
+      }
+      const spawnIndex = config.multiplayer.spawnIndex ?? 0;
+      const startPositions = [
+        new THREE.Vector3(-15, 0, 1.4),
+        new THREE.Vector3(-15, 0, 5.0),
+        new THREE.Vector3(-18, 0, 1.4),
+        new THREE.Vector3(-18, 0, 5.0),
+      ];
+      this.playerPos.copy(startPositions[spawnIndex % startPositions.length]);
+
+      if (config.multiplayer.mode === 'deathmatch') {
+        this.clearEnemies();
+        this.matchTimeRemaining = config.multiplayer.timeLimitSec || 360;
+        this.waveBanner = `DEATHMATCH · FIRST TO ${config.multiplayer.killLimit || 15} KILLS`;
+        this.waveBannerTimer = 3.5;
+      } else {
+        if (config.multiplayer.isHost) {
+          this.startWave(1);
+        } else {
+          this.clearEnemies();
+          this.waveBanner = 'CO-OP SURVIVAL · SQUAD ASSEMBLED';
+          this.waveBannerTimer = 3.0;
+        }
+      }
+    } else {
+      this.multiplayerConfig = null;
+      this.startWave(1);
+    }
+
     this.requestPointerLockSafe();
     this.emitHud(true);
   }
@@ -1350,13 +1533,26 @@ export class OutpostGameEngine {
     this.weaponRig.root.visible = false;
     this.clearEnemies();
     this.clearProjectilesAndPickups();
+    if (this.remotePlayers) {
+      this.remotePlayers.dispose();
+      this.remotePlayers = null;
+    }
+    this.multiplayerConfig = null;
     this.emitHud(true);
   }
 
   public updateSettings(next: Partial<GameSettings>) {
-    this.settings = { ...this.settings, ...next };
+    this.settings = {
+      ...this.settings,
+      ...next,
+      controls: next.controls ? { ...next.controls } : this.settings.controls,
+    };
     this.audio.setMuted(this.settings.muted);
     this.applyGraphicsSettings();
+  }
+
+  private controlIsHeld(action: keyof GameSettings['controls']) {
+    return this.heldKeys.has(this.settings.controls[action]);
   }
 
   private applyGraphicsSettings() {
@@ -1493,13 +1689,13 @@ export class OutpostGameEngine {
   }
 
   public toggleScopeZoom() {
-    if (this.phase !== 'playing' || this.weaponId !== 'railpistol') return;
+    if (this.phase !== 'playing' || !['railpistol', 'marksman'].includes(this.weaponId)) return;
     this.scopeZoomLevel = this.scopeZoomLevel === 6 ? 10 : 6;
     this.emitHud(true);
   }
 
   private isAdsActive(): boolean {
-    return (this.adsHeld || this.touchAdsActive) && !this.reloading;
+    return (this.adsHeld || this.touchAdsActive) && !this.reloading && this.grenadeCooldown<=0.12;
   }
 
   public requestPointerLockSafe() {
@@ -1555,8 +1751,13 @@ export class OutpostGameEngine {
     this.matchTimeSec = 0;
     this.killFeed = [];
 
-    this.weaponId = 'carbine';
-    this.weaponRig.setWeapon('carbine');
+    this.weaponId = this.loadout.primary[0];
+    this.weaponRig.setWeapon(this.weaponId);
+    this.grenadesRemaining = 3;
+    this.grenadeCooldown = 0;
+    this.pendingGrenade = null;
+    this.weaponRig.cancelGrenadeThrow();
+    for (const spec of Object.values(WEAPON_SPECS)) { this.ammoMap[spec.id] = spec.magSize; this.reserveMap[spec.id] = spec.reserveMax; }
     this.weaponRig.setScopeOverlayHidden(false);
     this.scopeAlpha = 0;
     this.scopeZoomLevel = 6;
@@ -1623,6 +1824,10 @@ export class OutpostGameEngine {
   }
 
   private clearProjectilesAndPickups() {
+    for (const item of [...this.ordnance, ...this.zones]) this.disposeOrdnanceMesh(item.mesh);
+    this.ordnance = [];
+    this.zones = [];
+    this.stunnedEnemies.clear();
     for (const p of this.projectiles) {
       p.active = false;
       p.mesh.visible = false;
@@ -1755,7 +1960,7 @@ export class OutpostGameEngine {
         this.jumpBufferTimer = 0.12;
       }
     }
-    if ((e.code === 'KeyC' || e.code === 'ControlLeft') && !e.repeat) {
+    if (e.code === this.settings.controls.crouch && !e.repeat) {
       if (!this.crouching && this.tryStartSlide()) {
         // Combat slide initiated!
       } else {
@@ -1764,30 +1969,33 @@ export class OutpostGameEngine {
         this.emitHud(true);
       }
     }
-    if (e.code === 'KeyF' && !e.repeat) {
+    if (e.code === this.settings.controls.dash && !e.repeat) {
       this.tryActivateDash();
     }
-    if (e.code === 'KeyI' && !e.repeat) {
+    if (e.code === this.settings.controls.inspect && !e.repeat) {
       this.audio.unlock();
       this.inspectHeld = true;
     }
-    if (e.code === 'KeyZ' && !e.repeat && this.weaponId === 'railpistol' && this.isAdsActive()) {
+    if (e.code === this.settings.controls.scopeZoom && !e.repeat && ['railpistol', 'marksman'].includes(this.weaponId) && this.isAdsActive()) {
       this.toggleScopeZoom();
     }
-    if (e.code === 'KeyR' && !e.repeat) {
+    if (e.code === this.settings.controls.reload && !e.repeat) {
       this.tryStartReload();
     }
-    if (e.code === 'Digit1' && !e.repeat) {
-      this.switchWeapon('carbine');
+    if (e.code === this.settings.controls.grenade && !e.repeat) this.throwGrenade();
+    if (e.code === this.settings.controls.sidearm && !e.repeat) this.switchWeapon(this.loadout.sidearm);
+    if (e.code === this.settings.controls.launcher && !e.repeat && this.loadout.launcher) this.switchWeapon(this.loadout.launcher);
+    if (e.code === this.settings.controls.primary1 && !e.repeat) {
+      this.switchWeapon(this.loadout.primary[0]);
     }
-    if (e.code === 'Digit2' && !e.repeat) {
-      this.switchWeapon('railpistol');
+    if (e.code === this.settings.controls.primary2 && !e.repeat) {
+      this.switchWeapon(this.loadout.primary[1]);
     }
   };
 
   private readonly handleKeyUp = (e: KeyboardEvent) => {
     this.heldKeys.delete(e.code);
-    if (e.code === 'KeyI') {
+    if (e.code === this.settings.controls.inspect) {
       this.inspectHeld = false;
     }
   };
@@ -1825,7 +2033,7 @@ export class OutpostGameEngine {
 
   private readonly handleMouseDown = (e: MouseEvent) => {
     if (this.phase !== 'playing') return;
-    if (e.target !== this.renderer.domElement) return;
+    if (!this.pointerLocked && e.target !== this.renderer.domElement) return;
 
     this.audio.unlock();
 
@@ -1864,11 +2072,13 @@ export class OutpostGameEngine {
   private readonly handleWheel = (e: WheelEvent) => {
     if (this.phase !== 'playing') return;
     if (Math.abs(e.deltaY) > 4) {
-      if (this.weaponId === 'railpistol' && this.isAdsActive()) {
+      if (['railpistol', 'marksman'].includes(this.weaponId) && this.isAdsActive()) {
         this.toggleScopeZoom();
         return;
       }
-      this.switchWeapon(this.weaponId === 'carbine' ? 'railpistol' : 'carbine');
+      const weapons = inventoryWeapons(this.loadout);
+      const index = weapons.indexOf(this.weaponId);
+      this.switchWeapon(weapons[(index + (e.deltaY > 0 ? 1 : weapons.length - 1)) % weapons.length]);
     }
   };
 
@@ -1959,7 +2169,7 @@ export class OutpostGameEngine {
   }
 
   private switchWeapon(next: WeaponId) {
-    if (this.weaponId === next) return;
+    if (!inventoryWeapons(this.loadout).includes(next) || this.weaponId === next) return;
     this.weaponId = next;
     this.reloading = false;
     this.reloadTimer = 0;
@@ -1998,10 +2208,10 @@ export class OutpostGameEngine {
     if (this.dashCooldown > 0 || this.dashTimer > 0) return;
 
     const moveFwd =
-      (this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp') ? 1 : 0) -
-      (this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown') ? 1 : 0) +
+      (this.controlIsHeld('forward') ? 1 : 0) -
+      (this.controlIsHeld('backward') ? 1 : 0) +
       this.touchMoveY;
-    const moveRight = (this.heldKeys.has('KeyD') ? 1 : 0) - (this.heldKeys.has('KeyA') ? 1 : 0) + this.touchMoveX;
+    const moveRight = (this.controlIsHeld('right') ? 1 : 0) - (this.controlIsHeld('left') ? 1 : 0) + this.touchMoveX;
 
     _v1.set(-Math.sin(this.yaw), 0, -Math.cos(this.yaw)); // forward
     _v2.set(Math.cos(this.yaw), 0, -Math.sin(this.yaw));  // right
@@ -2031,7 +2241,126 @@ export class OutpostGameEngine {
     this.emitHud(true);
   }
 
+  public throwGrenade() {
+    if (this.phase !== 'playing' || this.grenadesRemaining <= 0 || this.grenadeCooldown > 0) return;
+    this.grenadesRemaining--;
+    this.grenadeCooldown = 0.8;
+    this.inspectHeld = false;
+    this.pendingGrenade = {kind:this.loadout.grenade,delay:0.38};
+    this.weaponRig.triggerGrenadeThrow(this.loadout.grenade);
+    this.emitHud(true);
+  }
+
+  private launchOrdnance(kind: GrenadeId | 'rocket', source: WeaponId | GrenadeId, radius: number, damage: number) {
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(kind === 'rocket' ? 0.09 : 0.12, 10, 8), new THREE.MeshBasicMaterial({ color: kind === 'rocket' ? 0xffb347 : GRENADES[kind].color }));
+    this.camera.getWorldPosition(mesh.position);
+    const velocity = this.camera.getWorldDirection(new THREE.Vector3());
+    mesh.position.addScaledVector(velocity, 0.55);
+    velocity.multiplyScalar(kind === 'rocket' ? 42 : 15);
+    if (kind !== 'rocket') velocity.y += 4;
+    this.scene.add(mesh);
+    this.ordnance.push({ mesh, velocity, fuse: kind === 'rocket' ? 4 : kind === 'molotov' ? 3 : 1.6, kind, source, radius, damage });
+  }
+
+  private disposeOrdnanceMesh(mesh: THREE.Mesh<THREE.SphereGeometry, THREE.MeshBasicMaterial>) {
+    this.scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  private segmentNearSphere(a: THREE.Vector3, b: THREE.Vector3, center: THREE.Vector3, radius: number): boolean {
+    const ab = new THREE.Vector3().subVectors(b, a);
+    const t = THREE.MathUtils.clamp(new THREE.Vector3().subVectors(center, a).dot(ab) / Math.max(0.0001, ab.lengthSq()), 0, 1);
+    return ab.multiplyScalar(t).add(a).distanceToSquared(center) <= radius * radius;
+  }
+
+  private areaDamage(center: THREE.Vector3, radius: number, damage: number, source: WeaponId | GrenadeId) {
+    for (const enemy of this.enemies) {
+      if (!enemy.alive) continue;
+      const target = enemy.root.position.clone().add(new THREE.Vector3(0, enemy.kind === 'wasp' ? 0 : 0.9, 0));
+      const distance = center.distanceTo(target);
+      if (distance > radius) continue;
+      if (this.physics.raycastSegment(center.x, center.y, center.z, target.x, target.y, target.z, this.projRayHit, 0.01)) continue;
+      const dealt = Math.round(damage * (1 - 0.65 * distance / radius));
+      enemy.hp -= dealt;
+      enemy.hitFlashTimer = 0.12;
+      enemy.flinchKick = 0.8;
+      this.hitMarkerTimer = this.hitMarkerDuration = 0.25;
+      this.hitMarkerCrit = false;
+      this.hitMarkerKill = enemy.hp <= 0;
+      this.hitMarkerSeq++;
+      this.spawnDamageNumber(target, dealt, false, enemy.hp <= 0);
+      if (enemy.hp <= 0) this.handleEnemyKilled(enemy, false, target, source);
+    }
+  }
+
+  private updateOrdnance(dt: number) {
+    this.grenadeCooldown = Math.max(0, this.grenadeCooldown - dt);
+    if(this.pendingGrenade) {
+      this.pendingGrenade.delay-=dt;
+      if(this.pendingGrenade.delay<=0) {
+        const kind=this.pendingGrenade.kind;
+        this.pendingGrenade=null;
+        this.launchOrdnance(kind,kind,kind==='flashbang'?10:5,110);
+      }
+    }
+    for (let i = this.ordnance.length - 1; i >= 0; i--) {
+      const item = this.ordnance[i];
+      item.fuse -= dt;
+      if (item.kind !== 'rocket') item.velocity.y -= 12 * dt;
+      const from = item.mesh.position.clone();
+      const to = from.clone().addScaledVector(item.velocity, dt);
+      const wall = this.physics.raycastSegment(from.x, from.y, from.z, to.x, to.y, to.z, this.projRayHit, 0.06);
+      if (wall) to.copy(this.projRayHit.point).addScaledVector(this.projRayHit.normal, 0.18);
+      const ground = this.physics.sampleGroundAt(to.x, to.z, Math.max(to.y, from.y), 0.1, 0.3).y + 0.15;
+      const floor = to.y <= ground;
+      if (floor) to.y = ground;
+      item.mesh.position.copy(to);
+      const enemyHit = item.kind === 'rocket' && this.enemies.some(e => e.alive && this.segmentNearSphere(from, to, e.root.position.clone().add(new THREE.Vector3(0, 0.9, 0)), e.radius + 0.3));
+      const impact = wall || floor || enemyHit;
+      if (impact && item.kind !== 'rocket' && item.kind !== 'molotov') { item.velocity.multiplyScalar(0.4); item.velocity.y = Math.abs(item.velocity.y) * 0.35; }
+      if (item.fuse > 0 && !(impact && (item.kind === 'rocket' || item.kind === 'molotov'))) continue;
+      const center = to.clone();
+      if (item.kind === 'smoke' || item.kind === 'molotov') {
+        const smoke = item.kind === 'smoke';
+        const zone = new THREE.Mesh(new THREE.SphereGeometry(1, 16, 12), new THREE.MeshBasicMaterial({ color: smoke ? 0xaabbcc : 0xff6b16, transparent: true, opacity: smoke ? 0.65 : 0.35, depthWrite: false }));
+        zone.position.copy(center);
+        if (smoke) zone.position.y += 1.5;
+        zone.scale.set(item.radius, smoke ? 3 : 0.4, item.radius);
+        this.scene.add(zone);
+        this.zones.push({ mesh: zone, kind: item.kind, radius: item.radius, life: smoke ? 8 : 6, pulse: 0 });
+      } else if (item.kind === 'flashbang') {
+        for (const enemy of this.enemies) {
+          const target = enemy.root.position.clone().add(new THREE.Vector3(0, 1, 0));
+          if (enemy.alive && center.distanceTo(target) < item.radius && !this.physics.raycastSegment(center.x, center.y, center.z, target.x, target.y, target.z, this.projRayHit, 0.01)) this.stunnedEnemies.set(enemy.id, 4);
+        }
+        this.triggerImpactLight(center, 0xffffff, 30, 0.2);
+        this.spawnParticleBurst(center, 24, 0xffffff, 10);
+      } else {
+        this.areaDamage(center, item.radius, item.damage, item.source);
+        this.audio.playEnemyExplode();
+        this.triggerImpactLight(center, 0xffa43b, 20, 0.2);
+        this.spawnParticleBurst(center, 32, 0xff9a32, 10);
+      }
+      this.disposeOrdnanceMesh(item.mesh);
+      this.ordnance.splice(i, 1);
+    }
+    for (let i = this.zones.length - 1; i >= 0; i--) {
+      const zone = this.zones[i];
+      zone.life -= dt;
+      zone.pulse -= dt;
+      zone.mesh.material.opacity = Math.min(1, zone.life) * (zone.kind === 'smoke' ? 0.65 : 0.35);
+      if (zone.kind === 'molotov' && zone.pulse <= 0) {
+        zone.pulse = 0.5;
+        this.areaDamage(zone.mesh.position, zone.radius, 22, 'molotov');
+        this.spawnParticleBurst(zone.mesh.position, 6, 0xff8a24, 2.5);
+      }
+      if (zone.life <= 0) { this.disposeOrdnanceMesh(zone.mesh); this.zones.splice(i, 1); }
+    }
+  }
+
   private executeShot() {
+    if(this.grenadeCooldown>0.12) return;
     const spec = WEAPON_SPECS[this.weaponId];
     const currentAmmo = this.ammoMap[this.weaponId];
     const adsActive = this.isAdsActive();
@@ -2065,13 +2394,21 @@ export class OutpostGameEngine {
     this.triggerGunfireShake(this.weaponId === 'railpistol', adsActive);
     this.dynamicSpread = Math.min(0.032, this.dynamicSpread + (this.weaponId === 'railpistol' ? 0.012 : 0.0052));
 
+    if (spec.blastRadius) {
+      this.launchOrdnance('rocket', this.weaponId, spec.blastRadius, spec.damage);
+      if (this.ammoMap[this.weaponId] === 0) this.tryStartReload();
+      this.emitHud(true);
+      return;
+    }
+    let shotConnected = false;
+    for (let pellet = 0; pellet < (spec.pellets ?? 1); pellet++) {
     // Compute ray with calibrated spread (optical sniper ADS is pinpoint at exact reticle sway)
     const crouchSpread = this.crouching ? 0.65 : 1.0;
     const spread =
       ((adsActive ? spec.spreadAds : spec.spreadHip) + this.dynamicSpread * (adsActive ? 0.18 : 0.68)) * crouchSpread;
     let sx = (Math.random() - 0.5) * spread * 2;
     let sy = (Math.random() - 0.5) * spread * 2;
-    if (this.weaponId === 'railpistol' && this.scopeAlpha > 0.65) {
+    if (['railpistol', 'marksman'].includes(this.weaponId) && this.scopeAlpha > 0.65) {
       // Align shot precisely with the live optical crosshair sway offset on screen!
       const w = Math.max(1, this.container.clientWidth || window.innerWidth);
       const h = Math.max(1, this.container.clientHeight || window.innerHeight);
@@ -2098,6 +2435,13 @@ export class OutpostGameEngine {
         }
       }
     }
+    // In PvP Deathmatch, include remote players as hit targets
+    if (this.remotePlayers && (this.multiplayerConfig?.mode === 'deathmatch' || this.multiplayerConfig?.isHost === false)) {
+      const pMeshes = this.remotePlayers.getHitMeshes();
+      for (let i = 0; i < pMeshes.length; i++) {
+        enemyTargets.push(pMeshes[i]);
+      }
+    }
 
     const enemyHits = this.raycaster.intersectObjects(enemyTargets, false);
     const hitEnemy = enemyHits.length > 0 && enemyHits[0].distance < maxWallDist ? enemyHits[0] : null;
@@ -2107,51 +2451,92 @@ export class OutpostGameEngine {
 
     if (hitEnemy) {
       const hitObj = hitEnemy.object;
-      const enemyId = hitObj.userData.enemyId as number;
+      const isPlayer = Boolean(hitObj.userData.isPlayer);
       const isHeadshot = Boolean(hitObj.userData.isHeadshot);
-      const enemy = this.enemies.find((e) => e.id === enemyId && e.alive);
 
       this.spawnTracer(_v1, hitEnemy.point, spec.tracerColor);
 
-      if (enemy) {
-        this.shotsHit++;
+      if (isPlayer) {
+        const targetId = hitObj.userData.remotePlayerId as string;
+        shotConnected = true;
         const dmg = Math.round(spec.damage * (isHeadshot ? spec.headshotMultiplier : 1));
-        enemy.hp -= dmg;
-        enemy.hitFlashTimer = 0.095;
-        enemy.flinchKick = Math.min(1, enemy.flinchKick + (isHeadshot ? 0.85 : 0.45));
-
-        // Instant hit flash emissive boost
-        for (const m of enemy.bodyMaterials) {
-          m.emissive.setHex(isHeadshot ? 0xffc857 : 0xffffff);
-          m.emissiveIntensity = isHeadshot ? 0.75 : 0.4;
-        }
-
-        const killed = enemy.hp <= 0;
         if (isHeadshot) this.headshots++;
 
-        this.hitMarkerDuration = killed ? 0.3 : isHeadshot ? 0.24 : 0.2;
+        this.hitMarkerDuration = isHeadshot ? 0.24 : 0.2;
         this.hitMarkerTimer = this.hitMarkerDuration;
         this.hitMarkerCrit = isHeadshot;
-        this.hitMarkerKill = killed;
+        this.hitMarkerKill = false;
         this.hitMarkerSeq++;
 
-        this.audio.playHitMarker(isHeadshot, killed);
-        this.spawnDamageNumber(hitEnemy.point, dmg, isHeadshot, killed);
-        this.triggerImpactLight(
-          hitEnemy.point,
-          isHeadshot ? 0xffd257 : 0xff7b36,
-          isHeadshot ? 9.5 : 5.5,
-          0.065,
-        );
-        this.spawnParticleBurst(
-          hitEnemy.point,
-          isHeadshot ? 16 : 9,
-          isHeadshot ? 0xffca42 : 0xff7b36,
-          isHeadshot ? 7.5 : 5.2,
-        );
+        this.audio.playHitMarker(isHeadshot, false);
+        this.spawnDamageNumber(hitEnemy.point, dmg, isHeadshot, false);
+        this.triggerImpactLight(hitEnemy.point, isHeadshot ? 0xffd257 : 0xff7b36, 6.5, 0.065);
+        this.remotePlayers?.triggerDamage(targetId, dmg, isHeadshot);
 
-        if (killed) {
-          this.handleEnemyKilled(enemy, isHeadshot, hitEnemy.point);
+        this.networkManager?.broadcast({
+          type: 'player-damage',
+          targetId,
+          attackerId: this.networkManager.localPlayerId,
+          attackerName: this.networkManager.getLocalPlayer()?.name ?? 'Operative',
+          amount: dmg,
+          isHeadshot,
+          weaponId: this.weaponId,
+        });
+      } else {
+        const enemyId = hitObj.userData.enemyId as number;
+        const enemy = this.enemies.find((e) => e.id === enemyId && e.alive);
+
+        if (enemy) {
+          shotConnected = true;
+          const dmg = Math.round(spec.damage * (isHeadshot ? spec.headshotMultiplier : 1));
+          enemy.hp -= dmg;
+          enemy.hitFlashTimer = 0.095;
+          enemy.flinchKick = Math.min(1, enemy.flinchKick + (isHeadshot ? 0.85 : 0.45));
+
+          // Instant hit flash emissive boost
+          for (const m of enemy.bodyMaterials) {
+            m.emissive.setHex(isHeadshot ? 0xffc857 : 0xffffff);
+            m.emissiveIntensity = isHeadshot ? 0.75 : 0.4;
+          }
+
+          const killed = enemy.hp <= 0;
+          if (isHeadshot) this.headshots++;
+
+          this.hitMarkerDuration = killed ? 0.3 : isHeadshot ? 0.24 : 0.2;
+          this.hitMarkerTimer = this.hitMarkerDuration;
+          this.hitMarkerCrit = isHeadshot;
+          this.hitMarkerKill = killed;
+          this.hitMarkerSeq++;
+
+          this.audio.playHitMarker(isHeadshot, killed);
+          this.spawnDamageNumber(hitEnemy.point, dmg, isHeadshot, killed);
+          this.triggerImpactLight(
+            hitEnemy.point,
+            isHeadshot ? 0xffd257 : 0xff7b36,
+            isHeadshot ? 9.5 : 5.5,
+            0.065,
+          );
+          this.spawnParticleBurst(
+            hitEnemy.point,
+            isHeadshot ? 16 : 9,
+            isHeadshot ? 0xffca42 : 0xff7b36,
+            isHeadshot ? 7.5 : 5.2,
+          );
+
+          if (!this.multiplayerConfig?.isHost && this.networkManager) {
+            this.networkManager.broadcast({
+              type: 'enemy-damage',
+              enemyId,
+              amount: dmg,
+              isHeadshot,
+              shooterId: this.networkManager.localPlayerId,
+              weaponId: this.weaponId,
+            });
+          }
+
+          if (killed) {
+            this.handleEnemyKilled(enemy, isHeadshot, hitEnemy.point);
+          }
         }
       }
     } else if (worldHits.length > 0) {
@@ -2194,6 +2579,21 @@ export class OutpostGameEngine {
       this.spawnTracer(_v1, _v2, spec.tracerColor);
     }
 
+    }
+    if (shotConnected) this.shotsHit++;
+
+    // Broadcast gunfire across multiplayer network
+    if (this.networkManager && this.phase === 'playing') {
+      _v2.copy(this.raycaster.ray.origin).addScaledVector(this.raycaster.ray.direction, 65);
+      this.networkManager.broadcast({
+        type: 'player-shoot',
+        playerId: this.networkManager.localPlayerId,
+        weaponId: this.weaponId,
+        origin: [_v1.x, _v1.y, _v1.z],
+        target: [_v2.x, _v2.y, _v2.z],
+      });
+    }
+
     // Auto-reload if magazine hits zero and reserve remains
     if (this.ammoMap[this.weaponId] === 0 && this.reserveMap[this.weaponId] > 0) {
       this.tryStartReload();
@@ -2202,7 +2602,7 @@ export class OutpostGameEngine {
     this.emitHud(true);
   }
 
-  private handleEnemyKilled(enemy: EnemyEntity, isHeadshot: boolean, hitPoint: THREE.Vector3) {
+  private handleEnemyKilled(enemy: EnemyEntity, isHeadshot: boolean, hitPoint: THREE.Vector3, source: WeaponId | GrenadeId = this.weaponId) {
     enemy.alive = false;
     enemy.deathTimer = enemy.deathDuration;
     enemy.isWindingUp = false;
@@ -2213,7 +2613,7 @@ export class OutpostGameEngine {
       id: this.nextKillFeedId++,
       killer: 'Raven07',
       victim: enemy.displayName,
-      weapon: this.weaponId,
+      weapon: source,
       headshot: isHeadshot,
       ttl: 5.5,
     });
@@ -2654,6 +3054,89 @@ export class OutpostGameEngine {
       }
     }
 
+    // Update remote multiplayer operatives
+    this.remotePlayers?.update(dt, this.camera);
+
+    // Deathmatch respawn countdown
+    if (this.respawnTimer > 0) {
+      this.respawnTimer -= dt;
+      if (this.respawnTimer <= 0) {
+        this.respawnTimer = 0;
+        this.health = this.maxHealth;
+        this.shield = this.maxShield;
+        const pts = this.arena.spawnPoints;
+        const randPt = pts[Math.floor(Math.random() * pts.length)] ?? new THREE.Vector3(-15, 0, 1.4);
+        this.playerPos.copy(randPt);
+        this.playerVel.set(0, 0, 0);
+        this.networkManager?.broadcast({
+          type: 'player-respawn',
+          playerId: this.networkManager.localPlayerId,
+          pos: [this.playerPos.x, this.playerPos.y, this.playerPos.z],
+        });
+        this.emitHud(true);
+      }
+    }
+
+    // Deathmatch match time countdown
+    if (this.matchTimeRemaining > 0) {
+      this.matchTimeRemaining = Math.max(0, this.matchTimeRemaining - dt);
+      if (this.matchTimeRemaining <= 0) {
+        this.matchTimeRemaining = 0;
+        this.phase = 'victory';
+        this.waveBanner = 'MATCH CONCLUDED · FINAL SCORES';
+        this.waveBannerTimer = 4.0;
+        this.emitHud(true);
+      }
+    }
+
+    // High frequency network broadcast (~25Hz)
+    if (this.networkManager && this.phase === 'playing') {
+      this.networkBroadcastTimer += dt;
+      if (this.networkBroadcastTimer >= 0.04) {
+        this.networkBroadcastTimer = 0;
+        this.networkManager.broadcast({
+          type: 'player-state',
+          state: {
+            id: this.networkManager.localPlayerId,
+            timestamp: Date.now(),
+            pos: [this.playerPos.x, this.playerPos.y, this.playerPos.z],
+            vel: [this.playerVel.x, this.playerVel.y, this.playerVel.z],
+            yaw: this.yaw,
+            pitch: this.pitch,
+            weaponId: this.weaponId,
+            crouching: this.crouching,
+            sprinting: this.sprinting,
+            firing: this.fireHeld || this.touchFireHeld,
+            health: Math.ceil(this.health),
+            shield: Math.floor(this.shield),
+            alive: this.health > 0,
+          },
+        });
+      }
+
+      if (this.multiplayerConfig?.mode === 'coop' && this.multiplayerConfig.isHost) {
+        this.enemySyncTimer += dt;
+        if (this.enemySyncTimer >= 0.12) {
+          this.enemySyncTimer = 0;
+          this.networkManager.broadcast({
+            type: 'enemy-sync',
+            wave: this.wave,
+            enemiesRemaining: this.countAliveEnemies(),
+            enemies: this.enemies.map((e) => ({
+              id: e.id,
+              kind: e.kind,
+              pos: [e.root.position.x, e.root.position.y, e.root.position.z],
+              yaw: e.root.rotation.y,
+              hp: e.hp,
+              maxHp: e.maxHp,
+              alive: e.alive,
+              firing: e.isWindingUp,
+            })),
+          });
+        }
+      }
+    }
+
     // 2. Keyboard turn fallback (Q/E or Left/Right arrow)
     const turnSpeed = 2.15 * THREE.MathUtils.clamp(this.camera.fov / 75, 0.22, 1.0);
     if (this.heldKeys.has('KeyQ') || this.heldKeys.has('ArrowLeft')) this.yaw += turnSpeed * dt;
@@ -2666,12 +3149,12 @@ export class OutpostGameEngine {
 
     const adsActive = this.isAdsActive();
     const keyFwd =
-      (this.heldKeys.has('KeyW') || this.heldKeys.has('ArrowUp') ? 1 : 0) -
-      (this.heldKeys.has('KeyS') || this.heldKeys.has('ArrowDown') ? 1 : 0);
-    const keyRight = (this.heldKeys.has('KeyD') ? 1 : 0) - (this.heldKeys.has('KeyA') ? 1 : 0);
+      (this.controlIsHeld('forward') ? 1 : 0) -
+      (this.controlIsHeld('backward') ? 1 : 0);
+    const keyRight = (this.controlIsHeld('right') ? 1 : 0) - (this.controlIsHeld('left') ? 1 : 0);
     const moveFwd = THREE.MathUtils.clamp(keyFwd + this.touchMoveY, -1, 1);
     const moveRight = THREE.MathUtils.clamp(keyRight + this.touchMoveX, -1, 1);
-    const shiftHeld = this.heldKeys.has('ShiftLeft') || this.heldKeys.has('ShiftRight');
+    const shiftHeld = this.controlIsHeld('sprint');
 
     const wantsSprint =
       (shiftHeld || this.touchSprintLock) && moveFwd > 0.25 && !adsActive && !this.crouching && this.slideTimer <= 0;
@@ -2854,7 +3337,7 @@ export class OutpostGameEngine {
 
     // Hold-to-Inspect active check (cancels instantly on combat actions or sprinting/sliding/dashing)
     const canInspect =
-      (this.inspectHeld || this.heldKeys.has('KeyI')) &&
+      (this.inspectHeld || this.controlIsHeld('inspect')) &&
       !adsActive &&
       !this.reloading &&
       !this.sprinting &&
@@ -2922,9 +3405,10 @@ export class OutpostGameEngine {
 
     // Dynamic FOV (true 6x / 10x sniper optical magnification + subtle inspect close-up + damage punch)
     const spec = WEAPON_SPECS[this.weaponId];
-    const sniperFov = this.scopeZoomLevel === 10 ? 9 : spec.adsFov;
+    const opticalZoom = this.weaponId === 'marksman' ? (this.scopeZoomLevel === 10 ? 6 : 3) : this.scopeZoomLevel;
+    const sniperFov = THREE.MathUtils.radToDeg(2 * Math.atan(Math.tan(THREE.MathUtils.degToRad(75) / 2) / opticalZoom));
     const baseFov = adsActive
-      ? this.weaponId === 'railpistol'
+      ? ['railpistol', 'marksman'].includes(this.weaponId)
         ? sniperFov
         : spec.adsFov
       : this.inspectingActive
@@ -2932,13 +3416,13 @@ export class OutpostGameEngine {
         : this.sprinting
           ? 80
           : 75;
-    const fovPunchScale = this.weaponId === 'railpistol' && adsActive ? 0.22 : 1.0;
+    const fovPunchScale = ['railpistol', 'marksman'].includes(this.weaponId) && adsActive ? 0.22 : 1.0;
     const targetFov = THREE.MathUtils.clamp(baseFov + this.dashFovBoost + this.damageFovPunch * fovPunchScale, 7.2, 104);
     if (Math.abs(this.camera.fov - targetFov) > 0.03) {
       const fovLambda =
         this.dashTimer > 0 || Math.abs(this.damageFovPunch) > 0.35
           ? 24
-          : this.weaponId === 'railpistol' && adsActive
+          : ['railpistol', 'marksman'].includes(this.weaponId) && adsActive
             ? 13
             : this.inspectingActive
               ? 8.5
@@ -3029,7 +3513,7 @@ export class OutpostGameEngine {
     this.lookDeltaY = 0;
 
     // Seamless 3D Scope -> Full-Screen Optical Sniper Lens Handoff + Breath Sway
-    if (this.weaponId === 'railpistol' && adsActive) {
+    if (['railpistol', 'marksman'].includes(this.weaponId) && adsActive) {
       const adsBlend = this.weaponRig.getAdsBlend();
       const targetScope = THREE.MathUtils.clamp((adsBlend - 0.56) / 0.34, 0, 1);
       this.scopeAlpha = THREE.MathUtils.damp(this.scopeAlpha, targetScope, 18, dt);
@@ -3079,6 +3563,7 @@ export class OutpostGameEngine {
     }
 
     // 8. Wave Spawning & Enemy AI
+    this.updateOrdnance(dt);
     this.updateWaveAndEnemies(dt);
 
     // 9. Enemy Projectiles & Supply Pickups
@@ -3179,6 +3664,12 @@ export class OutpostGameEngine {
       e.recoilKick = THREE.MathUtils.damp(e.recoilKick, 0, 14, dt);
       e.flinchKick = THREE.MathUtils.damp(e.flinchKick, 0, 11, dt);
 
+      const stun = this.stunnedEnemies.get(e.id) ?? 0;
+      if (stun > 0) {
+        this.stunnedEnemies.set(e.id, Math.max(0, stun - dt));
+        e.isWindingUp = false;
+        continue;
+      }
       // Vector toward player on XZ plane
       const dx = this.playerPos.x - e.root.position.x;
       const dz = this.playerPos.z - e.root.position.z;
@@ -3297,6 +3788,8 @@ export class OutpostGameEngine {
         }
       }
 
+      const smokeBlocked = this.zones.some(zone => zone.kind === 'smoke' && this.segmentNearSphere(e.root.position, this.playerPos, zone.mesh.position, zone.radius));
+      if (smokeBlocked) { e.isWindingUp = false; e.fireCooldown = Math.max(e.fireCooldown, 0.3); continue; }
       // Attack Telegraph Windup & Projectile Firing
       if (e.isWindingUp) {
         e.windupTimer -= dt;
@@ -3434,7 +3927,13 @@ export class OutpostGameEngine {
     }
   }
 
-  private applyPlayerDamage(amount: number) {
+  private applyPlayerDamage(
+    amount: number,
+    attackerId?: string,
+    attackerName?: string,
+    weaponId?: WeaponId | GrenadeId,
+    isHeadshot?: boolean,
+  ) {
     this.timeSinceDamaged = 0;
 
     const hadShield = this.shield > 0;
@@ -3457,9 +3956,24 @@ export class OutpostGameEngine {
     this.audio.playPlayerDamage(dmgScale, shieldBroken);
 
     if (this.health <= 0) {
-      this.phase = 'gameover';
-      this.clearInputs();
-      this.exitPointerLockSafe();
+      if (this.multiplayerConfig?.mode === 'deathmatch') {
+        this.respawnTimer = 3.0;
+        this.health = 0;
+        const myName = this.networkManager?.getLocalPlayer()?.name ?? 'Operative';
+        this.networkManager?.broadcast({
+          type: 'player-killed',
+          victimId: this.networkManager.localPlayerId,
+          victimName: myName,
+          killerId: attackerId ?? 'opponent',
+          killerName: attackerName ?? 'Opponent',
+          weaponId: weaponId ?? 'carbine',
+          isHeadshot: Boolean(isHeadshot),
+        });
+      } else {
+        this.phase = 'gameover';
+        this.clearInputs();
+        this.exitPointerLockSafe();
+      }
     }
     this.emitHud(true);
   }
@@ -3481,8 +3995,7 @@ export class OutpostGameEngine {
           this.shield = Math.min(this.maxShield, this.shield + 25);
           this.pickupNotice = '+35 HEALTH · +25 SHIELD';
         } else {
-          this.reserveMap.carbine = Math.min(WEAPON_SPECS.carbine.reserveMax, this.reserveMap.carbine + 56);
-          this.reserveMap.railpistol = Math.min(WEAPON_SPECS.railpistol.reserveMax, this.reserveMap.railpistol + 24);
+          for (const id of inventoryWeapons(this.loadout)) this.reserveMap[id] = Math.min(WEAPON_SPECS[id].reserveMax, this.reserveMap[id] + WEAPON_SPECS[id].magSize * 2);
           this.pickupNotice = 'AMMO RESERVES REPLENISHED';
         }
         this.pickupNoticeTimer = 2.0;
@@ -3888,6 +4401,9 @@ export class OutpostGameEngine {
       endless: this.endless,
       enemiesRemaining: remaining,
       weaponId: this.weaponId,
+      inventory: inventoryWeapons(this.loadout).map(id => ({ id, ammo: this.ammoMap[id], reserve: this.reserveMap[id] })),
+      grenade: this.loadout.grenade,
+      grenadesRemaining: this.grenadesRemaining,
       ammo: this.ammoMap[this.weaponId],
       magSize: spec.magSize,
       reserve: this.reserveMap[this.weaponId],
@@ -3903,7 +4419,7 @@ export class OutpostGameEngine {
       inspecting: this.inspectingActive,
       ads: adsActive,
       scopeAlpha: this.scopeAlpha,
-      scopeZoom: this.scopeZoomLevel,
+      scopeZoom: this.weaponId === 'marksman' ? (this.scopeZoomLevel === 10 ? 6 : 3) : this.scopeZoomLevel,
       scopeSwayX: this.scopeSwayX,
       scopeSwayY: this.scopeSwayY,
       breathSteady: this.breathSteady,
@@ -3984,7 +4500,45 @@ export class OutpostGameEngine {
             kind: pk.kind,
           })),
         buildings: this.arena.buildingFootprints,
+        players: this.remotePlayers
+          ? this.remotePlayers.getPlayerPositions().map((p) => ({
+              id: p.id,
+              x: p.x,
+              z: p.z,
+              color: PLAYER_COLORS[p.color]?.css ?? '#06b6d4',
+              isTeammate: this.multiplayerConfig?.mode === 'coop',
+              name: p.name,
+            }))
+          : [],
       },
+      multiplayer:
+        this.multiplayerConfig && this.networkManager
+          ? {
+              active: true,
+              mode: this.multiplayerConfig.mode,
+              roomCode: this.multiplayerConfig.roomCode,
+              isHost: this.multiplayerConfig.isHost,
+              ping: this.networkManager.getLocalPlayer()?.ping ?? 0,
+              players: this.networkManager.players.map((p) => ({
+                id: p.id,
+                name: p.name,
+                color: p.color,
+                kills: p.id === this.networkManager!.localPlayerId ? this.eliminations : p.kills,
+                deaths: p.deaths,
+                score: p.id === this.networkManager!.localPlayerId ? this.score : p.score,
+                ping: p.ping,
+                health: p.id === this.networkManager!.localPlayerId ? Math.ceil(this.health) : p.health,
+                maxHealth: p.maxHealth,
+                shield: p.id === this.networkManager!.localPlayerId ? Math.floor(this.shield) : p.shield,
+                maxShield: p.maxShield,
+                alive: p.id === this.networkManager!.localPlayerId ? this.health > 0 : p.alive,
+                weaponId: p.equippedWeapon,
+              })),
+              respawnTimer: this.respawnTimer > 0 ? this.respawnTimer : undefined,
+              matchTimeRemaining: this.matchTimeRemaining > 0 ? this.matchTimeRemaining : undefined,
+              killLimit: this.multiplayerConfig.killLimit,
+            }
+          : undefined,
     });
   }
 
@@ -3992,6 +4546,10 @@ export class OutpostGameEngine {
     this.disposed = true;
     cancelAnimationFrame(this.frameId);
     clearTimeout(this.frameId);
+    if (this.remotePlayers) {
+      this.remotePlayers.dispose();
+      this.remotePlayers = null;
+    }
 
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
@@ -4012,6 +4570,7 @@ export class OutpostGameEngine {
     this.clearEnemies();
     this.staticBatches.dispose();
     this.arena.dispose();
+    for (const item of [...this.ordnance, ...this.zones]) this.disposeOrdnanceMesh(item.mesh);
     this.weaponRig.dispose();
     this.enemyFactory.dispose();
     this.textures.dispose();

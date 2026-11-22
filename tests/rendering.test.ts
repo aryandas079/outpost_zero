@@ -12,6 +12,43 @@ import { CachedSky } from '../src/game/cachedSky';
 import { FirstPersonWeaponRig } from '../src/game/weapon';
 import { EnemyFactory } from '../src/game/enemies';
 import { GRAPHICS_PRESETS, normalizeGameSettings } from '../src/game/graphicsSettings';
+import { tailoredLimb } from '../src/game/operatorModels';
+
+test('tailored glove surfaces face outward along their length and close at both ends',()=>{
+  const g=tailoredLimb([[0,0,0],[0,.5,0],[0,1,0]],[[.1,.1],[.1,.1],[.1,.1]],12,12);
+  const p=g.attributes.position,index=g.index!;
+  const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3();
+  for(let i=0;i<index.count;i+=3) {
+    a.fromBufferAttribute(p,index.getX(i));b.fromBufferAttribute(p,index.getX(i+1));c.fromBufferAttribute(p,index.getX(i+2));
+    const center=a.clone().add(b).add(c).divideScalar(3),normal=b.clone().sub(a).cross(c.clone().sub(a));
+    const outward=center.clone().sub(new THREE.Vector3(0,.5,0));
+    assert.ok(normal.dot(outward)>0,'Gloves must render their exterior rather than hollow backfaces');
+  }
+  g.dispose();
+});
+
+test('grenade presentation releases and restores the weapon without exposing a scoped viewmodel',()=>{
+  const texture=new THREE.CanvasTexture({width:1,height:1} as HTMLCanvasElement);
+  const rig=new FirstPersonWeaponRig(new Proxy({},{get:()=>texture}) as ProceduralTextures);
+  const parts=rig as unknown as {weaponPivot:THREE.Group;activeThrowable:THREE.Group};
+  rig.triggerGrenadeThrow('frag');
+  rig.update(.15,0,true,false,false,0,1);
+  assert.equal(parts.weaponPivot.visible,false);
+  assert.equal(parts.activeThrowable.visible,true);
+  assert.ok(!new THREE.Box3().setFromObject(parts.activeThrowable).isEmpty());
+  rig.update(.6,0,true,false,false,0,1);
+  assert.equal(parts.weaponPivot.visible,true);
+  assert.equal(parts.activeThrowable.visible,false);
+  rig.setScopeOverlayHidden(true);
+  rig.update(.016,0,true,true,false,0,1);
+  assert.equal(parts.weaponPivot.visible,false,'Scope visibility survives subsequent animation updates');
+  rig.setScopeOverlayHidden(false);
+  rig.triggerGrenadeThrow('smoke');
+  rig.cancelGrenadeThrow();
+  assert.equal(parts.activeThrowable.visible,false);
+  assert.equal(parts.weaponPivot.visible,true);
+  rig.dispose();texture.dispose();
+});
 
 test('crafted geometry has finite attributes and preserves collision extents', () => {
   for (const dimensions of [[1, 2, 0.44], [0.055, 0.072, 0.042], [2, 0.012, 0.4]]) {
@@ -351,4 +388,11 @@ test('graphics presets preserve visual quality and sanitize saved preferences', 
   assert.equal(normalized.targetFps, 100);
   assert.equal(normalized.shadowQuality, 'high');
   assert.equal(normalized.textureFiltering, 4);
+  assert.equal(normalized.controls.forward, 'KeyW');
+  assert.equal(normalized.controls.scopeZoom, 'KeyZ');
+
+  const customControls = normalizeGameSettings({ controls: { forward: 'ArrowUp', reload: 'KeyT' } });
+  assert.equal(customControls.controls.forward, 'ArrowUp');
+  assert.equal(customControls.controls.reload, 'KeyT');
+  assert.equal(customControls.controls.sidearm, 'Digit3');
 });

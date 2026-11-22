@@ -1,0 +1,33 @@
+{
+  "appId": "com.outpostzero.tactical",
+  "productName": "Outpost Zero",
+  "copyright": "Copyright © 2026 Outpost Zero",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "files": [
+    "dist/**/*",
+    "electron/**/*",
+    "package.json"
+  ],
+  "nodeGypRebuild": false,
+  "npmRebuild": false,
+  "win": {
+    "icon": "build/icon.png",
+    "target": [
+      {
+        "target": "dir",
+        "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
+      }
+    ],
+    "legalTrademarks": "Outpost Zero"
+  },
+  "portable": {
+    "artifactName": "${productName}-Standalone-${version}.exe"
+  }
+}

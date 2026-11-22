@@ -1,4 +1,4 @@
-import { GameSettings } from './types';
+import { ControlAction, GameSettings, KeyBindings } from './types';
 
 export type GraphicsPreset = Exclude<GameSettings['graphicsPreset'], 'custom'>;
 
@@ -31,14 +31,35 @@ export const GRAPHICS_PRESETS: Record<GraphicsPreset, Pick<GameSettings,
   },
 };
 
+export const DEFAULT_KEY_BINDINGS: KeyBindings = {
+  forward: 'KeyW',
+  backward: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  sprint: 'ShiftLeft',
+  crouch: 'KeyC',
+  reload: 'KeyR',
+  dash: 'KeyF',
+  inspect: 'KeyI',
+  grenade: 'KeyG',
+  scopeZoom: 'KeyZ',
+  primary1: 'Digit1',
+  primary2: 'Digit2',
+  sidearm: 'Digit3',
+  launcher: 'Digit4',
+};
+
+const CONTROL_ACTIONS = Object.keys(DEFAULT_KEY_BINDINGS) as ControlAction[];
+
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   sensitivity: 1,
   muted: false,
   ...GRAPHICS_PRESETS.balanced,
+  controls: { ...DEFAULT_KEY_BINDINGS },
 };
 
 export function normalizeGameSettings(value: unknown): GameSettings {
-  if (!value || typeof value !== 'object') return { ...DEFAULT_GAME_SETTINGS };
+  if (!value || typeof value !== 'object') return { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_KEY_BINDINGS } };
   const candidate = value as Partial<GameSettings>;
   const presets: GameSettings['graphicsPreset'][] = ['quality', 'balanced', 'performance', 'custom'];
   const fpsTargets: GameSettings['targetFps'][] = [60, 90, 100, 120, 144];
@@ -60,6 +81,13 @@ export function normalizeGameSettings(value: unknown): GameSettings {
       ? candidate.shadowQuality as GameSettings['shadowQuality'] : DEFAULT_GAME_SETTINGS.shadowQuality,
     textureFiltering: filtering.includes(candidate.textureFiltering as GameSettings['textureFiltering'])
       ? candidate.textureFiltering as GameSettings['textureFiltering'] : DEFAULT_GAME_SETTINGS.textureFiltering,
+    controls: CONTROL_ACTIONS.reduce<KeyBindings>((bindings, action) => {
+      const proposed = candidate.controls?.[action];
+      bindings[action] = typeof proposed === 'string' && proposed.length > 0 && proposed.length <= 32
+        ? proposed
+        : DEFAULT_KEY_BINDINGS[action];
+      return bindings;
+    }, {} as KeyBindings),
   };
 }
 

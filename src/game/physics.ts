@@ -134,7 +134,7 @@ export class PhysicsWorld {
     // 1. Register explicit architectural colliders first (exact walls, floors, doorways, ceilings, railings)
     for (let i = 0; i < arena.colliders.length; i++) {
       const c = arena.colliders[i];
-      this.addBodyBox(c.minX, c.maxX, c.minY, c.maxY, c.minZ, c.maxZ, 'wood');
+      this.addBodyBox(c.minX, c.maxX, c.minY, c.maxY, c.minZ, c.maxZ, normalizeSurface(c.surface ?? 'wood'));
     }
 
     // 2. Automatically scan ALL environment meshes in arena.group to guarantee zero un-collided geometry
@@ -542,13 +542,12 @@ export class PhysicsWorld {
     const moveDist = Math.hypot(moveDx, moveDz);
     const maxStep = Math.min(0.12, body.radius * 0.28);
     const subSteps = Math.max(1, Math.ceil(moveDist / maxStep));
-    const stepDx = moveDx / subSteps;
-    const stepDz = moveDz / subSteps;
+    const stepTime = dt / subSteps;
 
     const hitInfo = { hit: false, nx: 0, nz: 0 };
     for (let s = 0; s < subSteps; s++) {
-      body.position.x += stepDx;
-      body.position.z += stepDz;
+      body.position.x += body.velocity.x * stepTime;
+      body.position.z += body.velocity.z * stepTime;
       // 2 iterative constraint passes per substep cleanly resolve multi-wall corners & pillars
       for (let pass = 0; pass < 2; pass++) {
         if (
@@ -604,7 +603,7 @@ export class PhysicsWorld {
     const ground = this.sampleGroundAt(
       body.position.x,
       body.position.z,
-      body.position.y,
+      Math.max(prevY, body.position.y),
       body.radius,
       body.stepHeight,
       body.groundNormal,

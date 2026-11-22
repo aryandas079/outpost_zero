@@ -2,15 +2,15 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 
 /** Small, actual edge radii catch light without changing an object's overall size. */
-export function craftedBox(width = 1, height = 1, depth = 1): THREE.BufferGeometry {
+export function craftedBox(width = 1, height = 1, depth = 1, smallPart = false): THREE.BufferGeometry {
   const shortest = Math.min(width, height, depth);
   // Paper-thin strips and very large structural slabs need no extra tessellation.
-  if (shortest < 0.06 || Math.max(width, height, depth) > 18) {
+  if (shortest < (smallPart ? 0.003 : 0.06) || Math.max(width, height, depth) > 18) {
     return new THREE.BoxGeometry(width, height, depth);
   }
   // Six faces, twelve beveled edges and eight clipped corners: 44 triangles,
   // versus 108 for a subdivided rounded box. Thin siding stays at 12 triangles.
-  const radius = Math.min(0.035, shortest * 0.16);
+  const radius = Math.min(smallPart ? 0.002 : 0.035, shortest * 0.12);
   const half = [width / 2, height / 2, depth / 2];
   const inner = half.map(value => value - radius);
   const positions: number[] = [];

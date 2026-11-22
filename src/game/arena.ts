@@ -3,6 +3,7 @@ import { craftedBox, batchDecoration, optimizeStaticArena } from './geometry';
 import { ProceduralTextures } from './textures';
 
 export interface BoxCollider {
+  surface?: string;
   minX: number;
   maxX: number;
   minY: number;
@@ -424,8 +425,8 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   const brutalistConcreteMat = trackMat(
     new THREE.MeshStandardMaterial({
       map: textures.concreteColor,
-      normalMap: textures.canyonRockNormal,
-      normalScale: new THREE.Vector2(0.7, 0.7),
+      bumpMap: textures.concreteBump,
+      bumpScale: 0.024,
       color: 0xa8a196,
       roughness: 0.9,
       metalness: 0.03,
@@ -648,6 +649,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
     group.add(mesh);
     if (collide) {
       colliders.push({
+        surface: mesh.userData.surface,
         minX: x - w / 2,
         maxX: x + w / 2,
         minY: y - h / 2,

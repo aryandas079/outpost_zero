@@ -2,9 +2,22 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { GameHud } from './components/GameHud';
 import { ModalOverlay } from './components/ModalOverlay';
 import { TitleOverlay } from './components/TitleOverlay';
+import { MultiplayerMenu } from './components/MultiplayerMenu';
+import { MultiplayerLobby } from './components/MultiplayerLobby';
+import { MultiplayerHudOverlay } from './components/MultiplayerHudOverlay';
+import { LoadoutSelection } from './components/LoadoutSelection';
 import { OutpostGameEngine } from './game/engine';
-import { GameSettings, HudSnapshot, MissionConfig, WEAPON_SPECS, WeaponId } from './game/types';
+import { GameSettings, HudSnapshot, Loadout, MissionConfig, WEAPON_SPECS, WeaponId } from './game/types';
 import { DEFAULT_GAME_SETTINGS, normalizeGameSettings } from './game/graphicsSettings';
+import { DEFAULT_LOADOUT } from './game/loadout';
+import { NetworkManager, parseRoomFromUrl } from './game/multiplayer/networkManager';
+import {
+  DEFAULT_MULTIPLAYER_SETTINGS,
+  MultiplayerGameSettings,
+  NetworkChatMessage,
+  PlayerColorId,
+  PlayerProfile,
+} from './game/multiplayer/types';
 
 const SETTINGS_STORAGE_KEY = 'outpost-zero-settings-v1';
 
@@ -22,6 +35,9 @@ const INITIAL_HUD: HudSnapshot = {
   endless: false,
   enemiesRemaining: 0,
   weaponId: 'carbine',
+  inventory: [],
+  grenade: 'frag',
+  grenadesRemaining: 3,
   ammo: WEAPON_SPECS.carbine.magSize,
   magSize: WEAPON_SPECS.carbine.magSize,
   reserve: WEAPON_SPECS.carbine.reserveMax,
@@ -120,7 +136,7 @@ export default function App() {
     try {
       return normalizeGameSettings(JSON.parse(window.localStorage.getItem(SETTINGS_STORAGE_KEY) ?? 'null'));
     } catch {
-      return { ...DEFAULT_GAME_SETTINGS };
+      return { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_GAME_SETTINGS.controls } };
     }
   });
   const [missionConfig, setMissionConfig] = useState<MissionConfig>({
@@ -132,6 +148,19 @@ export default function App() {
   const [isPortrait, setIsPortrait] = useState<boolean>(() =>
     typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : false,
   );
+
+  // Multiplayer State
+  const [multiplayerFlow, setMultiplayerFlow] = useState<'none' | 'menu' | 'lobby'>(() => {
+    return parseRoomFromUrl() ? 'menu' : 'none';
+  });
+  const networkManagerRef = useRef<NetworkManager | null>(null);
+  const [networkPlayers, setNetworkPlayers] = useState<PlayerProfile[]>([]);
+  const [networkSettings, setNetworkSettings] = useState<MultiplayerGameSettings>(DEFAULT_MULTIPLAYER_SETTINGS);
+  const [networkRoomCode, setNetworkRoomCode] = useState<string>('');
+  const [chatMessages, setChatMessages] = useState<NetworkChatMessage[]>([]);
+  const [loadoutModalOpen, setLoadoutModalOpen] = useState(false);
+  const [currentLoadoutToEdit, setCurrentLoadoutToEdit] = useState<Loadout>(DEFAULT_LOADOUT);
+  const loadoutSaveCallbackRef = useRef<((next: Loadout) => void) | null>(null);
 
   // Track responsive mobile/desktop mode and enforce landscape awareness on mobile devices
   useEffect(() => {
@@ -212,8 +241,112 @@ export default function App() {
     engineRef.current?.continueEndless();
   }, []);
 
+  const getOrCreateNetworkManager = useCallback(() => {
+    if (!networkManagerRef.current) {
+      const nm = new NetworkManager({
+        onPlayersChange: (players) => setNetworkPlayers([...players]),
+        onSettingsChange: (st) => setNetworkSettings(st),
+        onChatMessage: () => {
+          if (networkManagerRef.current) {
+            setChatMessages([...networkManagerRef.current.chatMessages]);
+          }
+        },
+        onMatchStart: (matchSettings, _seed, spawnIndices) => {
+          setMultiplayerFlow('none');
+          const me = networkManagerRef.current?.getLocalPlayer();
+          const localId = networkManagerRef.current?.localPlayerId ?? 'p1';
+          const spawnIdx = spawnIndices[localId] ?? 0;
+          const conf: MissionConfig = {
+            difficulty: matchSettings.difficulty,
+            mapId: matchSettings.mapId,
+            loadout: me?.loadout ?? missionConfig.loadout ?? DEFAULT_LOADOUT,
+            multiplayer: {
+              mode: matchSettings.mode,
+              isHost: networkManagerRef.current?.isHost ?? false,
+              roomCode: networkManagerRef.current?.roomCode ?? '',
+              localPlayerId: localId,
+              killLimit: matchSettings.killLimit,
+              timeLimitSec: matchSettings.timeLimitSec,
+              spawnIndex: spawnIdx,
+            },
+          };
+          setMissionConfig(conf);
+          engineRef.current?.startMission(conf);
+        },
+        onError: (err) => {
+          console.warn('Network notice:', err);
+        },
+      });
+      networkManagerRef.current = nm;
+      engineRef.current?.attachNetworkManager(nm);
+    }
+    return networkManagerRef.current;
+  }, [missionConfig.loadout]);
+
+  const handleHostRoom = useCallback(
+    async (
+      profile: { name: string; color: PlayerColorId; loadout: Loadout },
+      st: MultiplayerGameSettings,
+    ) => {
+      const nm = getOrCreateNetworkManager();
+      const code = await nm.hostRoom(profile, st);
+      setNetworkRoomCode(code);
+      setNetworkSettings(st);
+      setNetworkPlayers([...nm.players]);
+      setChatMessages([...nm.chatMessages]);
+      setMultiplayerFlow('lobby');
+    },
+    [getOrCreateNetworkManager],
+  );
+
+  const handleJoinRoom = useCallback(
+    async (
+      code: string,
+      profile: { name: string; color: PlayerColorId; loadout: Loadout },
+    ) => {
+      const nm = getOrCreateNetworkManager();
+      await nm.joinRoom(code, profile);
+      setNetworkRoomCode(code);
+      setNetworkPlayers([...nm.players]);
+      setChatMessages([...nm.chatMessages]);
+      setMultiplayerFlow('lobby');
+    },
+    [getOrCreateNetworkManager],
+  );
+
+  const handleStartMultiplayerMatch = useCallback(() => {
+    networkManagerRef.current?.startMatch();
+  }, []);
+
+  const handleToggleReady = useCallback(() => {
+    const me = networkManagerRef.current?.getLocalPlayer();
+    if (me && networkManagerRef.current) {
+      networkManagerRef.current.updateLocalProfile({ ready: !me.ready });
+    }
+  }, []);
+
+  const handleSendChat = useCallback((text: string) => {
+    networkManagerRef.current?.sendChatMessage(text);
+    if (networkManagerRef.current) {
+      setChatMessages([...networkManagerRef.current.chatMessages]);
+    }
+  }, []);
+
+  const handleLeaveLobby = useCallback(() => {
+    networkManagerRef.current?.disconnect();
+    setMultiplayerFlow('none');
+  }, []);
+
+  const handleOpenLoadoutModal = useCallback((current: Loadout, onSave: (next: Loadout) => void) => {
+    setCurrentLoadoutToEdit(current);
+    loadoutSaveCallbackRef.current = onSave;
+    setLoadoutModalOpen(true);
+  }, []);
+
   const handleMainMenu = useCallback(() => {
+    networkManagerRef.current?.disconnect();
     engineRef.current?.returnToTitle();
+    setMultiplayerFlow('none');
   }, []);
 
   const handleSensitivityChange = useCallback((sensitivity: number) => {
@@ -245,6 +378,10 @@ export default function App() {
   }, []);
 
   const handleToggleFullscreen = useCallback(() => {
+    if (window.electronAPI) {
+      window.electronAPI.toggleFullscreen();
+      return;
+    }
     if (document.fullscreenElement) {
       document.exitFullscreen?.().catch(() => {});
     } else {
@@ -330,42 +467,106 @@ export default function App() {
         </div>
       )}
 
-      {/* Simple Home Screen + Match Setup (Difficulty & Map) + Settings */}
-      {hud.phase === 'title' && (
+      {/* Sectioned Main Menu Command Center: Solo Mission, Multiplayer, Armory, Settings, Intel */}
+      {hud.phase === 'title' && multiplayerFlow === 'none' && (
         <TitleOverlay
           bestScore={hud.bestScore}
           settings={{ ...settings, muted: hud.muted }}
           initialDifficulty={missionConfig.difficulty}
           initialMap={missionConfig.mapId}
+          initialLoadout={missionConfig.loadout}
+          initialSection={parseRoomFromUrl() ? 'multiplayer' : 'solo'}
           onStartMission={handleStartMission}
           onSensitivityChange={handleSensitivityChange}
           onToggleMute={handleToggleMute}
           onSettingsChange={handleSettingsChange}
+          onOpenMultiplayer={() => setMultiplayerFlow('menu')}
+          onHostRoom={handleHostRoom}
+          onJoinRoom={handleJoinRoom}
+          onLoadoutChange={(next) => setMissionConfig((prev) => ({ ...prev, loadout: next }))}
         />
+      )}
+
+      {/* Multiplayer Match Hub / Setup Menu */}
+      {hud.phase === 'title' && multiplayerFlow === 'menu' && (
+        <MultiplayerMenu
+          onBack={() => setMultiplayerFlow('none')}
+          onHostRoom={handleHostRoom}
+          onJoinRoom={handleJoinRoom}
+          initialLoadout={missionConfig.loadout}
+          onOpenLoadout={handleOpenLoadoutModal}
+        />
+      )}
+
+      {/* Multiplayer Squad Lobby */}
+      {hud.phase === 'title' && multiplayerFlow === 'lobby' && (
+        <MultiplayerLobby
+          roomCode={networkRoomCode}
+          isHost={networkManagerRef.current?.isHost ?? false}
+          localPlayerId={networkManagerRef.current?.localPlayerId ?? ''}
+          players={networkPlayers}
+          settings={networkSettings}
+          chatMessages={chatMessages}
+          onStartMatch={handleStartMultiplayerMatch}
+          onToggleReady={handleToggleReady}
+          onSendChat={handleSendChat}
+          onLeaveLobby={handleLeaveLobby}
+          onOpenLoadout={handleOpenLoadoutModal}
+        />
+      )}
+
+      {/* Loadout Selection Modal for Multiplayer */}
+      {loadoutModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80">
+          <LoadoutSelection
+            initial={currentLoadoutToEdit}
+            onBack={() => setLoadoutModalOpen(false)}
+            onDeploy={(next) => {
+              loadoutSaveCallbackRef.current?.(next);
+              if (networkManagerRef.current) {
+                networkManagerRef.current.updateLocalProfile({
+                  loadout: next,
+                  equippedWeapon: next.primary[0],
+                });
+              }
+              setMissionConfig((prev) => ({ ...prev, loadout: next }));
+              setLoadoutModalOpen(false);
+            }}
+          />
+        </div>
       )}
 
       {/* Active Playing HUD (Auto-switches cleanly between Mobile Landscape Touch & Desktop Clean HUD) */}
       {hud.phase === 'playing' && (
-        <GameHud
-          hud={hud}
-          muted={hud.muted}
-          isMobile={isMobile}
-          onPause={handlePause}
-          onToggleMute={handleToggleMute}
-          onToggleFullscreen={handleToggleFullscreen}
-          onSelectWeapon={handleSelectWeapon}
-          onReload={handleReload}
-          onDash={handleDash}
-          onInspectHold={handleInspectHold}
-          onToggleCrouch={handleToggleCrouch}
-          onToggleScopeZoom={handleToggleScopeZoom}
-          onTouchMove={handleTouchMove}
-          onTouchLook={handleTouchLook}
-          onTouchFire={handleTouchFire}
-          onTouchAdsToggle={handleTouchAdsToggle}
-          onTouchSprintToggle={handleTouchSprintToggle}
-          onTouchJump={handleTouchJump}
-        />
+        <>
+          <GameHud controls={settings.controls}
+            hud={hud}
+            muted={hud.muted}
+            isMobile={isMobile}
+            onPause={handlePause}
+            onToggleMute={handleToggleMute}
+            onToggleFullscreen={handleToggleFullscreen}
+            onSelectWeapon={handleSelectWeapon}
+            onReload={handleReload}
+            onThrowGrenade={() => engineRef.current?.throwGrenade()}
+            onDash={handleDash}
+            onInspectHold={handleInspectHold}
+            onToggleCrouch={handleToggleCrouch}
+            onToggleScopeZoom={handleToggleScopeZoom}
+            onTouchMove={handleTouchMove}
+            onTouchLook={handleTouchLook}
+            onTouchFire={handleTouchFire}
+            onTouchAdsToggle={handleTouchAdsToggle}
+            onTouchSprintToggle={handleTouchSprintToggle}
+            onTouchJump={handleTouchJump}
+          />
+          {hud.multiplayer?.active && (
+            <MultiplayerHudOverlay
+              multiplayer={hud.multiplayer}
+              localPlayerId={networkManagerRef.current?.localPlayerId ?? ''}
+            />
+          )}
+        </>
       )}
 
       {/* Pause / Victory / Game Over Modal */}

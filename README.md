@@ -1,6 +1,6 @@
-# Outpost Zero — 3D Tactical First-Person Shooter
+# Outpost Zero — 3D Tactical First-Person Shooter & Combat Simulator
 
-A high-performance sunlit brutalist 3D first-person shooter built with Three.js, React, and Tailwind CSS. Features procedural low-poly sci-fi weapons, tactical wave-based droid combat, Web Audio API sound synthesis, procedural canvas textures, responsive desktop and mobile controls, and advanced rendering optimizations (multi-draw batching, static geometry merging, and adaptive quality targetting high-refresh rates up to 200 FPS).
+A high-performance sunlit brutalist 3D first-person shooter built with Three.js, React, and Tailwind CSS. Features procedural low-poly weapons, tactical wave-based droid combat, peer-to-peer multiplayer, Web Audio API sound synthesis, responsive desktop and mobile controls, and advanced rendering optimizations (multi-draw batching, static geometry merging, and adaptive quality targeting high-refresh rates up to 200 FPS).
 
 🎮 **Live Demo:** [https://aryandas079.github.io/outpost_zero/](https://aryandas079.github.io/outpost_zero/)
 
@@ -17,35 +17,56 @@ A high-performance sunlit brutalist 3D first-person shooter built with Three.js,
 - **Shift**: Sprint
 - **C**: Slide / Crouch
 - **R**: Reload
-- **1 / 2** or **Mouse Wheel**: Switch Weapons (M13 Carbine / K-9 Sniper)
-- **Escape**: Pause Menu / Graphics Settings / Release Mouse Lock
+- **G**: Throw Grenade (0.38s hand release presentation)
+- **1 / 2**: Primary Weapons (M4A1 Carbine / M249 LMG)
+- **3 / 4**: Sidearm (Glock 17) & Heavy Ordnance (RPG-7)
+- **Mouse Wheel**: Cycle Weapons
+- **Tab**: Multiplayer Leaderboard & Match Stats
+- **Escape**: Pause Menu / Graphics & Controls Settings / Release Mouse Lock
 
 ### Mobile / Touch
 - **Left Virtual Joystick**: Movement
 - **Right Virtual Touchpad**: Look / Aim
-- **On-Screen Buttons**: Fire, ADS, Jump, Reload, Weapon Switch
+- **On-Screen Buttons**: Fire, ADS, Jump, Reload, Grenade, Weapon Switch
 
 ---
 
-## 🚀 Features & Optimizations
+## 🌐 Peer-to-Peer Multiplayer (Up to 4 Players)
 
-- **High-Refresh Rendering Engine**: Multi-draw batching, static geometry grouping (reducing scene draw calls by ~80%), dynamic shadow caching, and GPU timer telemetry.
-- **Adaptive Quality Control**: Automatically monitors frame times and scales resolution and visual effects to sustain smooth performance (supporting 60Hz, 120Hz, 144Hz, and 200+ FPS targets).
-- **Procedural Textures & Materials**: Concrete, metal trim, solar panels, and dust effects generated entirely in code with zero external texture bloat.
-- **Web Audio API Sound Engine**: Real-time synthesized gunshot audio, ricochets, shell drops, footsteps, reload clicks, and ambient atmospheric tones.
-- **Dynamic Wave Combat**: Encounter adaptive AI combat droids with laser targeting, flanking behaviors, and escalating wave difficulty.
-- **Tactical Combat HUD**: Sci-fi minimalist HUD with dynamic crosshair, radar minimap, health & shield gauges, and ammo displays.
-- **Automated GitHub Pages CI/CD**: Pushes to `main` build and deploy to GitHub Pages automatically via GitHub Actions.
+Outpost Zero features full peer-to-peer multiplayer using WebRTC with automatic STUN signaling, allowing up to 4 players from anywhere in the world to connect instantly without external server software or port forwarding.
+
+### Game Modes:
+- **Co-op Wave Defense (1-4 Players)**: Team up to survive frontier robot waves across the 15 enterable buildings of West Town. Players share the battlefield, revive teammates, coordinate loadouts, and synchronize enemy waves.
+- **Deathmatch PvP Arena (2-4 Players)**: Free-for-all tactical shootout with customizable elimination goals (First to 10, 15, or 25 kills), dynamic respawns, headshot detection, and real-time leaderboard (toggled with `[TAB]`).
+
+### How to Play with Friends:
+1. Click **Multiplayer (1-4 Players)** on the main menu.
+2. Choose your **Call-sign** and **Visor/Armor Color** (Neon Cyan, Solar Amber, Bio Emerald, Pulse Rose).
+3. **Host a Match**: Select your mode, difficulty or score limit, and click **Create Match Lobby**.
+4. Share the generated 6-character **Room Code** (e.g. `OPZ-7K2X`) or click **Share Link** to copy a direct invite link (`?room=OPZ-7K2X`).
+5. **Join a Match**: Other players click **Join Existing Room**, paste the code (or open the shared link), and click **Connect**.
+6. When players ready up, the host clicks **Launch Squad Mission** to begin!
 
 ---
 
-## 🛠️ Local Development & Testing
+## 🔫 Weapons & Custom Models
+
+The default loadout includes the **M4A1 carbine**, **M249 LMG**, **Glock 17**, and **RPG-7**. The first-person models feature fitted full-finger tactical gloves, charcoal fabric, metal roughness and normal maps, and separate factory-marking decals.
+
+### Tactical HUD & Settings
+- Slim tactical compass, circular radar minimap, compact vitals and equipment panels, and angled ammunition readouts.
+- Full graphics settings: resolution scaling, shadow resolution, post-processing toggles, and target framerate presets (60, 120, 144, 200+ FPS).
+- Customizable keybindings and controls remapping.
+
+---
+
+## 🛠️ Local Development & Desktop App
 
 ### Prerequisites
 - Node.js (v18+)
 - npm
 
-### Setup
+### Web Development
 ```bash
 # Clone the repository
 git clone https://github.com/aryandas079/outpost_zero.git
@@ -57,18 +78,21 @@ npm ci
 # Run test suite
 npm test
 
-# Start local development server
+# Start local dev server
 npm run dev
 ```
 
-### Production Build
+### Desktop Application (Electron)
 ```bash
-npm run build
-npm run preview
+# Run in Electron dev mode
+npm run electron:dev
+
+# Package standalone desktop executable
+npm run electron:pack
 ```
 
 ---
 
 ## 🚢 Deployment
 
-Automated deployment is configured with GitHub Actions (`.github/workflows/deploy.yml`). Pushes to the `main` branch automatically trigger a production build, run tests, and deploy to GitHub Pages.
+Automated deployment is configured with GitHub Actions (`.github/workflows/deploy.yml`). Pushes to the `main` branch automatically run the test suite, build the production bundle, and deploy to GitHub Pages.

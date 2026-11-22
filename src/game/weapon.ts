@@ -1,7 +1,13 @@
 import * as THREE from 'three';
-import { craftedBox, batchDecoration } from './geometry';
+import { craftedBox as baseCraftedBox, batchDecoration } from './geometry';
+import { buildArmoryWeapon } from './weaponModels';
+import { buildOperatorHands } from './operatorModels';
+import { buildThrowable } from './ordnanceModels';
+import { weaponDecal } from './modelDecals';
 import { ProceduralTextures } from './textures';
-import { WeaponId } from './types';
+import { GrenadeId, WeaponId } from './types';
+
+const craftedBox = (w: number, h: number, d: number) => baseCraftedBox(w, h, d, true);
 
 interface ShellCasing {
   mesh: THREE.Mesh;
@@ -35,11 +41,17 @@ export class FirstPersonWeaponRig {
   private readonly materials: THREE.Material[] = [];
 
   private activeWeapon: WeaponId = 'carbine';
+  private equippedWeapon: WeaponId = 'carbine';
+  private equipmentModels = new Map<WeaponId, THREE.Group>();
+  private throwableModels = new Map<GrenadeId, THREE.Group>();
+  private throwTimer = 0;
+  private activeThrowable?: THREE.Group;
   private recoilZ = 0;
   private recoilPitch = 0;
   private recoilVelZ = 0;
   private recoilVelPitch = 0;
   private boltKick = 0;
+  private activeSlide?: THREE.Object3D;
   private muzzleFlashTimer = 0;
   private swapBlend = 0;
   private swayPhase = 0;
@@ -61,7 +73,7 @@ export class FirstPersonWeaponRig {
   private landDip = 0;
   private landDipVel = 0;
 
-  // Authentic tactical FPS framing matching reference: authoritative foreground dark rifle & gloved support hand
+  // Camera-space hip framing and look-through optic alignment.
   private readonly hipPosCarbine = new THREE.Vector3(0.188, -0.205, -0.305);
   private readonly hipRotCarbine = new THREE.Euler(0.018, 0.105, -0.03);
   // True look-through holographic optic ADS alignment (reticle centered at y = 0.156)
@@ -70,15 +82,20 @@ export class FirstPersonWeaponRig {
 
   // Precision Scoped Sniper Rifle (Slot 2) — raises smoothly into full optical scope overlay
   private readonly hipPosRail = new THREE.Vector3(0.198, -0.212, -0.315);
+  private readonly hipPosPistol = new THREE.Vector3(0.17, -0.125, -0.13);
+  private readonly hipPosHeavy = new THREE.Vector3(0.215, -0.18, -0.23);
   private readonly hipRotRail = new THREE.Euler(0.016, 0.098, -0.028);
   // Scope optical axis aligned cleanly with camera center before seamless optical lens handoff
+  private readonly adsPosPistol = new THREE.Vector3(0, -0.046, -0.215);
+  private readonly adsPosMarksman = new THREE.Vector3(0, -0.12, -0.215);
+  private readonly adsPosIron = new THREE.Vector3(0, -0.075, -0.215);
   private readonly adsPosRail = new THREE.Vector3(0.0, -0.154, -0.175);
   private readonly adsRotRail = new THREE.Euler(0.0, 0.0, 0.0);
 
   private readonly leftArmRestPos = new THREE.Vector3(0, 0, 0);
   private readonly leftArmRestRot = new THREE.Euler(0, 0, 0);
 
-  constructor(textures: ProceduralTextures) {
+  constructor(private readonly textures: ProceduralTextures) {
     this.root = new THREE.Group();
     this.weaponPivot = new THREE.Group();
     this.weaponPivot.position.copy(this.hipPosCarbine);
@@ -107,10 +124,9 @@ export class FirstPersonWeaponRig {
     // =========================================================================
     const fdeCerakoteMat = trackMat(
       new THREE.MeshPhysicalMaterial({
-        map: textures.gunFdeColor,
         roughnessMap: textures.gunFdeRoughness,
         normalMap: textures.gunFdeNormal,
-        normalScale: new THREE.Vector2(0.55, 0.55),
+        normalScale: new THREE.Vector2(0.18, 0.18),
         color: 0x3b4046,
         roughness: 0.58,
         metalness: 0.44,
@@ -121,10 +137,9 @@ export class FirstPersonWeaponRig {
 
     const wornGunmetalMat = trackMat(
       new THREE.MeshPhysicalMaterial({
-        map: textures.gunMetalColor,
         roughnessMap: textures.gunMetalRoughness,
         normalMap: textures.gunMetalNormal,
-        normalScale: new THREE.Vector2(0.55, 0.55),
+        normalScale: new THREE.Vector2(0.18, 0.18),
         color: 0x545b64,
         roughness: 0.42,
         metalness: 0.86,
@@ -135,10 +150,9 @@ export class FirstPersonWeaponRig {
 
     const anodizedBlackMat = trackMat(
       new THREE.MeshStandardMaterial({
-        map: textures.gunMetalColor,
         roughnessMap: textures.gunMetalRoughness,
         normalMap: textures.gunMetalNormal,
-        normalScale: new THREE.Vector2(0.42, 0.42),
+        normalScale: new THREE.Vector2(0.14, 0.14),
         color: 0x262a30,
         roughness: 0.52,
         metalness: 0.76,
@@ -147,7 +161,6 @@ export class FirstPersonWeaponRig {
 
     const scopeMatteBodyMat = trackMat(
       new THREE.MeshStandardMaterial({
-        map: textures.gunMetalColor,
         roughnessMap: textures.gunMetalRoughness,
         normalMap: textures.gunMetalNormal,
         normalScale: new THREE.Vector2(0.35, 0.35),
@@ -247,7 +260,7 @@ export class FirstPersonWeaponRig {
       }),
     );
 
-    // High-resolution etched mil-dot sniper scope glass reticle (Image 1!)
+    // Etched mil-dot sniper scope glass reticle.
     this.scopeLensMat = trackMat(
       new THREE.MeshBasicMaterial({
         map: textures.scopeLensReticle,
@@ -255,86 +268,6 @@ export class FirstPersonWeaponRig {
         opacity: 0.98,
         depthWrite: false,
         side: THREE.DoubleSide,
-      }),
-    );
-
-    const sleeveMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        map: textures.tacticalSleeveColor,
-        bumpMap: textures.tacticalSleeveBump,
-        bumpScale: 0.004,
-        color: 0x42474c,
-        roughness: 0.92,
-        metalness: 0.04,
-      }),
-    );
-
-    const humanSkinMat = trackMat(
-      new THREE.MeshPhysicalMaterial({
-        map: textures.humanSkinColor,
-        normalMap: textures.humanSkinNormal,
-        normalScale: new THREE.Vector2(0.45, 0.45),
-        color: 0xf4e4d8,
-        roughness: 0.62,
-        metalness: 0.0,
-        sheen: 0.22,
-        sheenRoughness: 0.72,
-        sheenColor: new THREE.Color(0xd99b82),
-      }),
-    );
-
-    const fingernailMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: 0xd8b29e,
-        roughness: 0.34,
-        metalness: 0.03,
-      }),
-    );
-
-    const watchStrapMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: 0x1d2024,
-        roughness: 0.72,
-        metalness: 0.16,
-      }),
-    );
-
-    const watchBezelMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: 0x2a2e34,
-        roughness: 0.38,
-        metalness: 0.78,
-      }),
-    );
-
-    const watchFaceMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        color: 0x0b0f13,
-        roughness: 0.14,
-        metalness: 0.25,
-      }),
-    );
-
-    const brutalistGloveMat = trackMat(
-      new THREE.MeshStandardMaterial({
-        map: textures.tacticalGloveColor,
-        normalMap: textures.tacticalGloveNormal,
-        normalScale: new THREE.Vector2(0.75, 0.75),
-        color: 0x3b3f44,
-        roughness: 0.82,
-        metalness: 0.1,
-      }),
-    );
-
-    const brutalistArmorMat = trackMat(
-      new THREE.MeshPhysicalMaterial({
-        normalMap: textures.gunMetalNormal,
-        normalScale: new THREE.Vector2(0.35, 0.35),
-        color: 0x1c2026,
-        roughness: 0.44,
-        metalness: 0.52,
-        clearcoat: 0.16,
-        clearcoatRoughness: 0.48,
       }),
     );
 
@@ -347,9 +280,12 @@ export class FirstPersonWeaponRig {
     );
 
     // =========================================================================
-    // 1. M13-MOD2 BATTLE-WORN TACTICAL CARBINE + HOLO SIGHT & BUIS (Image 2!)
+    // 1. M4A1 CARBINE + HOLOGRAPHIC SIGHT & BACKUP IRONS
     // =========================================================================
     this.carbineGroup = new THREE.Group();
+    const marking=weaponDecal(textures,0,.12,.013,this.geometries,this.materials);
+    marking.rotation.y=-Math.PI/2;marking.position.set(-.041,-.012,.026);
+    this.carbineGroup.add(marking);
 
     // Sculpted beveled multi-faceted FDE upper receiver
     const receiverShape = new THREE.Shape();
@@ -398,7 +334,7 @@ export class FirstPersonWeaponRig {
     rearStock.rotation.x = -0.06;
     this.carbineGroup.add(rearStock);
 
-    // Rear T-handle charging latch perched right behind the rear BUIS (matches Image 2 foreground!)
+    // Rear T-handle charging latch behind the backup sight.
     const chLatchBase = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.014, 0.026)), anodizedBlackMat);
     chLatchBase.position.set(0, 0.042, 0.248);
     this.carbineGroup.add(chLatchBase);
@@ -528,7 +464,7 @@ export class FirstPersonWeaponRig {
       this.carbineGroup.add(vl, vr);
     }
 
-    // Crisp Full-Length Machined 1913 Picatinny Top Rail (prominent specular highlights like Image 2!)
+    // Full-length machined 1913 Picatinny top rail.
     const topRailSpine = new THREE.Mesh(trackGeo(craftedBox(0.028, 0.011, 0.68)), anodizedBlackMat);
     topRailSpine.position.set(0, 0.056, -0.115);
     this.carbineGroup.add(topRailSpine);
@@ -545,7 +481,7 @@ export class FirstPersonWeaponRig {
     }
 
     // =========================================================================
-    // DETAILED REAR FLIP-UP BACKUP IRON SIGHT (BUIS) — Foreground Image 2 Detail!
+    // Rear flip-up backup iron sight.
     // =========================================================================
     const buisGroup = new THREE.Group();
     buisGroup.position.set(0, 0.062, 0.145);
@@ -572,7 +508,7 @@ export class FirstPersonWeaponRig {
     buisAperture.position.set(0, 0.029, -0.006);
     buisGroup.add(buisAperture);
 
-    // Knurled side windage adjustment knob (matches right/left metallic dial in Image 2!)
+    // Knurled side windage adjustment knob.
     const windageKnob = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.011, 0.011, 0.014, 16)), opticDialMat);
     windageKnob.rotation.z = Math.PI / 2;
     windageKnob.position.set(-0.026, 0.016, -0.006);
@@ -776,38 +712,14 @@ export class FirstPersonWeaponRig {
     this.carbineMag.add(magWindow);
     this.carbineGroup.add(this.carbineMag);
 
-    // =========================================================================
-    // FIRST-PERSON REAL ANATOMICAL BRUTALIST-TACTICAL HANDS & SLEEVES
-    // =========================================================================
-    this.carbineLeftArm = this.buildTacticalLeftArm(
-      trackGeo,
-      sleeveMat,
-      humanSkinMat,
-      fingernailMat,
-      watchStrapMat,
-      watchBezelMat,
-      watchFaceMat,
-      brutalistGloveMat,
-      brutalistArmorMat,
-    );
-    this.carbineLeftArm.position.copy(this.leftArmRestPos);
-    this.carbineLeftArm.rotation.copy(this.leftArmRestRot);
-    this.carbineGroup.add(this.carbineLeftArm);
-
-    const rightArm = this.buildTacticalRightArm(
-      trackGeo,
-      sleeveMat,
-      humanSkinMat,
-      fingernailMat,
-      brutalistGloveMat,
-      brutalistArmorMat,
-    );
-    this.carbineGroup.add(rightArm);
+    const carbineHands = buildOperatorHands('carbine', textures, this.geometries, this.materials);
+    this.carbineLeftArm = carbineHands.left;
+    this.carbineGroup.add(carbineHands.left, carbineHands.right);
 
     this.weaponPivot.add(this.carbineGroup);
 
     // =========================================================================
-    // 2. K-9 PRECISION MARKSMAN RIFLE + OPTICAL MIL-DOT SCOPE (Image 1!)
+    // 2. K-9 PRECISION RIFLE + OPTICAL MIL-DOT SCOPE
     // =========================================================================
     this.railGroup = new THREE.Group();
     this.railGroup.visible = false;
@@ -923,7 +835,7 @@ export class FirstPersonWeaponRig {
     this.railGroup.add(snpGrip);
 
     // =========================================================================
-    // AUTHENTIC PRECISION VARIABLE-POWER OPTICAL SCOPE (Matches Image 1!)
+    // VARIABLE-POWER OPTICAL SCOPE
     // Optical center: y = 0.154, ocular rear rim: z = +0.015
     // =========================================================================
     const scopeGroup = new THREE.Group();
@@ -954,7 +866,7 @@ export class FirstPersonWeaponRig {
     scopeTubeOuter.position.set(0, 0, 0.125);
     scopeGroup.add(scopeTubeOuter);
 
-    // Thick Matte-Black Rubberized Ocular Eyepiece Bezel Ring (creates the signature circular frame of Image 1!)
+    // Matte rubberized ocular eyepiece bezel.
     const eyepieceOuter = new THREE.Shape();
     eyepieceOuter.absarc(0, 0, 0.0372, 0, Math.PI * 2, false);
     const eyepieceHole = new THREE.Path();
@@ -994,7 +906,7 @@ export class FirstPersonWeaponRig {
     scopeLens.position.set(0, 0, 0.106);
     scopeGroup.add(scopeLens);
 
-    // Protruding Knurled Elevation Turret (top) & Parallax/Windage Turrets (sides — visible in Image 1!)
+    // Knurled elevation and windage turrets.
     const elevTurret = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.017, 0.018, 0.026, 20)), opticDialMat);
     elevTurret.position.set(0, 0.036, -0.025);
     scopeGroup.add(elevTurret);
@@ -1022,31 +934,9 @@ export class FirstPersonWeaponRig {
     throwLever.rotation.z = 0.85;
     scopeGroup.add(throwLever);
 
-    // Real anatomical operator hands for marksman rifle
-    this.railLeftArm = this.buildTacticalLeftArm(
-      trackGeo,
-      sleeveMat,
-      humanSkinMat,
-      fingernailMat,
-      watchStrapMat,
-      watchBezelMat,
-      watchFaceMat,
-      brutalistGloveMat,
-      brutalistArmorMat,
-    );
-    this.railLeftArm.position.copy(this.leftArmRestPos);
-    this.railLeftArm.rotation.copy(this.leftArmRestRot);
-    this.railGroup.add(this.railLeftArm);
-
-    const railRightArm = this.buildTacticalRightArm(
-      trackGeo,
-      sleeveMat,
-      humanSkinMat,
-      fingernailMat,
-      brutalistGloveMat,
-      brutalistArmorMat,
-    );
-    this.railGroup.add(railRightArm);
+    const sniperHands = buildOperatorHands('railpistol', textures, this.geometries, this.materials);
+    this.railLeftArm = sniperHands.left;
+    this.railGroup.add(sniperHands.left, sniperHands.right);
 
     this.weaponPivot.add(this.railGroup);
 
@@ -1124,625 +1014,64 @@ export class FirstPersonWeaponRig {
     });
   }
 
-  /**
-   * Builds a smooth, continuous, rotation-minimizing elliptical loft along a 3D spline
-   * with organic hemispherical dome end-caps (zero flat cylinder circles or seam gaps).
-   */
-  private buildLoftedLimb(
-    points: THREE.Vector3[],
-    radii: Array<[number, number]>,
-    radialSegs = 16,
-    tubularSegs = 18,
-    capStart = true,
-    capEnd = true,
-    refUp = new THREE.Vector3(0, 1, 0),
-  ): THREE.BufferGeometry {
-    const curve = new THREE.CatmullRomCurve3(points, false, 'centripetal', 0.5);
-
-    const sampleRadius = (t: number): [number, number] => {
-      const scaled = THREE.MathUtils.clamp(t, 0, 1) * (radii.length - 1);
-      const idx = Math.min(radii.length - 2, Math.floor(scaled));
-      const frac = scaled - idx;
-      // Smoothstep interpolation for natural anatomical taper
-      const s = frac * frac * (3 - 2 * frac);
-      return [
-        THREE.MathUtils.lerp(radii[idx][0], radii[idx + 1][0], s),
-        THREE.MathUtils.lerp(radii[idx][1], radii[idx + 1][1], s),
-      ];
-    };
-
-    interface RingSpec {
-      center: THREE.Vector3;
-      N: THREE.Vector3;
-      B: THREE.Vector3;
-      rN: number;
-      rB: number;
-      v: number;
-    }
-
-    // 1. Sample backbone frames with parallel transport to avoid twisting
-    const coreCenters: THREE.Vector3[] = [];
-    const coreTangents: THREE.Vector3[] = [];
-    const coreNormals: THREE.Vector3[] = [];
-    const coreBinormals: THREE.Vector3[] = [];
-    const coreRadii: Array<[number, number]> = [];
-    const q = new THREE.Quaternion();
-
-    for (let i = 0; i <= tubularSegs; i++) {
-      const t = i / tubularSegs;
-      const p = curve.getPoint(t);
-      const T = curve.getTangent(t).normalize();
-      let N: THREE.Vector3;
-
-      if (i === 0) {
-        const hint = Math.abs(T.dot(refUp)) > 0.92 ? new THREE.Vector3(1, 0, 0) : refUp.clone();
-        N = hint.addScaledVector(T, -hint.dot(T)).normalize();
-      } else {
-        q.setFromUnitVectors(coreTangents[i - 1], T);
-        N = coreNormals[i - 1].clone().applyQuaternion(q);
-        N.addScaledVector(T, -N.dot(T)).normalize();
-      }
-      const B = new THREE.Vector3().crossVectors(T, N).normalize();
-
-      coreCenters.push(p);
-      coreTangents.push(T);
-      coreNormals.push(N);
-      coreBinormals.push(B);
-      coreRadii.push(sampleRadius(t));
-    }
-
-    // 2. Assemble ring sequence including smooth hemispherical dome caps
-    const rings: RingSpec[] = [];
-    const capSteps = 3;
-
-    if (capStart) {
-      const c0 = coreCenters[0];
-      const T0 = coreTangents[0];
-      const N0 = coreNormals[0];
-      const B0 = coreBinormals[0];
-      const [rN0, rB0] = coreRadii[0];
-      const domeDepth = (rN0 + rB0) * 0.46;
-      for (let k = capSteps; k >= 1; k--) {
-        const phi = (k / capSteps) * (Math.PI * 0.495);
-        const radialScale = Math.cos(phi);
-        const axialOff = Math.sin(phi) * domeDepth;
-        rings.push({
-          center: c0.clone().addScaledVector(T0, -axialOff),
-          N: N0,
-          B: B0,
-          rN: Math.max(0.0002, rN0 * radialScale),
-          rB: Math.max(0.0002, rB0 * radialScale),
-          v: 0,
-        });
-      }
-    }
-
-    for (let i = 0; i <= tubularSegs; i++) {
-      rings.push({
-        center: coreCenters[i],
-        N: coreNormals[i],
-        B: coreBinormals[i],
-        rN: coreRadii[i][0],
-        rB: coreRadii[i][1],
-        v: i / tubularSegs,
-      });
-    }
-
-    if (capEnd) {
-      const last = tubularSegs;
-      const c1 = coreCenters[last];
-      const T1 = coreTangents[last];
-      const N1 = coreNormals[last];
-      const B1 = coreBinormals[last];
-      const [rN1, rB1] = coreRadii[last];
-      const domeDepth = (rN1 + rB1) * 0.48;
-      for (let k = 1; k <= capSteps; k++) {
-        const phi = (k / capSteps) * (Math.PI * 0.495);
-        const radialScale = Math.cos(phi);
-        const axialOff = Math.sin(phi) * domeDepth;
-        rings.push({
-          center: c1.clone().addScaledVector(T1, axialOff),
-          N: N1,
-          B: B1,
-          rN: Math.max(0.0002, rN1 * radialScale),
-          rB: Math.max(0.0002, rB1 * radialScale),
-          v: 1,
-        });
-      }
-    }
-
-    // 3. Emit indexed vertices & outward-facing triangles
-    const stride = radialSegs + 1;
-    const positions = new Float32Array(rings.length * stride * 3);
-    const uvs = new Float32Array(rings.length * stride * 2);
-    const indices: number[] = [];
-
-    for (let i = 0; i < rings.length; i++) {
-      const ring = rings[i];
-      for (let j = 0; j <= radialSegs; j++) {
-        const u = j / radialSegs;
-        const theta = u * Math.PI * 2;
-        const cosT = Math.cos(theta);
-        const sinT = Math.sin(theta);
-
-        const vx = ring.center.x + cosT * ring.rN * ring.N.x + sinT * ring.rB * ring.B.x;
-        const vy = ring.center.y + cosT * ring.rN * ring.N.y + sinT * ring.rB * ring.B.y;
-        const vz = ring.center.z + cosT * ring.rN * ring.N.z + sinT * ring.rB * ring.B.z;
-
-        const vIdx = i * stride + j;
-        positions[vIdx * 3] = vx;
-        positions[vIdx * 3 + 1] = vy;
-        positions[vIdx * 3 + 2] = vz;
-
-        uvs[vIdx * 2] = u;
-        uvs[vIdx * 2 + 1] = ring.v;
-      }
-    }
-
-    for (let i = 0; i < rings.length - 1; i++) {
-      const row0 = i * stride;
-      const row1 = (i + 1) * stride;
-      for (let j = 0; j < radialSegs; j++) {
-        const a = row0 + j;
-        const b = row0 + j + 1;
-        const c = row1 + j;
-        const d = row1 + j + 1;
-        indices.push(a, b, c, b, d, c);
-      }
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
-    geo.setIndex(indices);
-    geo.computeVertexNormals();
-    return geo;
-  }
-
-  private buildTacticalLeftArm(
-    trackGeo: <T extends THREE.BufferGeometry>(g: T) => T,
-    sleeveMat: THREE.Material,
-    skinMat: THREE.Material,
-    fingernailMat: THREE.Material,
-    watchStrapMat: THREE.Material,
-    watchBezelMat: THREE.Material,
-    watchFaceMat: THREE.Material,
-    brutalistGloveMat: THREE.Material,
-    brutalistArmorMat: THREE.Material,
-  ): THREE.Group {
-    const group = new THREE.Group();
-
-    // 1. Continuous Olive-Charcoal Ripstop Combat Sleeve with folded cuff lip
-    const sleeveGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(-0.31, -0.31, 0.23),
-          new THREE.Vector3(-0.21, -0.205, 0.045),
-          new THREE.Vector3(-0.132, -0.122, -0.092),
-          new THREE.Vector3(-0.09, -0.08, -0.152),
-          new THREE.Vector3(-0.082, -0.072, -0.162),
-        ],
-        [
-          [0.056, 0.052],
-          [0.049, 0.045],
-          [0.041, 0.039],
-          [0.043, 0.041],
-          [0.029, 0.027],
-        ],
-        20,
-        24,
-        false,
-        false,
-      ),
-    );
-    group.add(new THREE.Mesh(sleeveGeo, sleeveMat));
-
-    // 2. Rugged Brutalist Tactical Field Watch encircling the bare wrist ahead of the cuff
-    const watchGroup = new THREE.Group();
-    watchGroup.position.set(-0.077, -0.067, -0.172);
-    watchGroup.lookAt(-0.048, -0.032, -0.258);
-    const strap = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.0252, 0.0044, 10, 22)), watchStrapMat);
-    strap.scale.set(0.92, 1.08, 1.0);
-    watchGroup.add(strap);
-    const watchCase = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.0135, 0.014, 0.0068, 16)), watchBezelMat);
-    watchCase.rotation.z = Math.PI / 2;
-    watchCase.position.set(-0.0245, 0.004, 0.0);
-    watchGroup.add(watchCase);
-    const watchDial = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.0105, 0.0105, 0.0074, 16)), watchFaceMat);
-    watchDial.rotation.z = Math.PI / 2;
-    watchDial.position.set(-0.025, 0.004, 0.0);
-    watchGroup.add(watchDial);
-    group.add(watchGroup);
-
-    // 3. Continuous Seamless Bare Human Forearm/Wrist -> Sculpted Anatomical Palm & Metacarpals
-    // Tucked 3 cm INSIDE the sleeve so zero seam gap or cylinder cap can ever appear!
-    const wristHandGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(-0.102, -0.092, -0.132),
-          new THREE.Vector3(-0.075, -0.065, -0.176),
-          new THREE.Vector3(-0.058, -0.046, -0.214),
-          new THREE.Vector3(-0.048, -0.032, -0.246),
-          new THREE.Vector3(-0.044, -0.025, -0.278),
-          new THREE.Vector3(-0.04, -0.023, -0.302),
-        ],
-        [
-          [0.029, 0.025],
-          [0.0245, 0.0195],
-          [0.031, 0.018],
-          [0.036, 0.017],
-          [0.037, 0.016],
-          [0.031, 0.014],
-        ],
-        22,
-        26,
-        false,
-        true,
-      ),
-    );
-    group.add(new THREE.Mesh(wristHandGeo, skinMat));
-
-    // Subtle ulna wrist bone bump & dorsal metacarpal extensor tendons along the bare wrist/back of hand
-    const ulnaBump = new THREE.Mesh(trackGeo(new THREE.SphereGeometry(0.0068, 10, 8)), skinMat);
-    ulnaBump.scale.set(0.75, 0.85, 1.35);
-    ulnaBump.position.set(-0.088, -0.072, -0.184);
-    group.add(ulnaBump);
-
-    for (let t = 0; t < 3; t++) {
-      const tendonGeo = trackGeo(
-        this.buildLoftedLimb(
-          [
-            new THREE.Vector3(-0.078, -0.06 + t * 0.004, -0.188),
-            new THREE.Vector3(-0.064, -0.044 + t * 0.005, -0.228),
-            new THREE.Vector3(-0.057, -0.028 + t * 0.004, -0.268),
-          ],
-          [
-            [0.0024, 0.0018],
-            [0.0028, 0.0022],
-            [0.0024, 0.0018],
-          ],
-          8,
-          10,
-          true,
-          true,
-        ),
-      );
-      group.add(new THREE.Mesh(tendonGeo, skinMat));
-    }
-
-    // 4. Brutalist Fingerless Tactical Half-Glove Wrap & Faceted Carbon Knuckle Shell
-    // Leaves wrist, thumb, and articulated bare human fingers exposed while fitting the brutalist aesthetic!
-    const halfGloveGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(-0.062, -0.05, -0.206),
-          new THREE.Vector3(-0.05, -0.034, -0.244),
-          new THREE.Vector3(-0.044, -0.026, -0.278),
-          new THREE.Vector3(-0.041, -0.024, -0.294),
-        ],
-        [
-          [0.0295, 0.0195],
-          [0.0372, 0.0188],
-          [0.0384, 0.018],
-          [0.0335, 0.0162],
-        ],
-        20,
-        14,
-        false,
-        false,
-      ),
-    );
-    group.add(new THREE.Mesh(halfGloveGeo, brutalistGloveMat));
-
-    // Matte Velcro wrist cinch band at proximal edge of half-glove
-    const gloveCinch = new THREE.Mesh(trackGeo(new THREE.TorusGeometry(0.0265, 0.0038, 8, 18)), brutalistArmorMat);
-    gloveCinch.position.set(-0.062, -0.05, -0.206);
-    gloveCinch.lookAt(-0.044, -0.026, -0.278);
-    gloveCinch.scale.set(0.84, 1.15, 1.0);
-    group.add(gloveCinch);
-
-    // Beveled Brutalist Carbon-Composite Knuckle Armor Plate across dorsal MCP bridge
-    const knucklePlateShape = new THREE.Shape();
-    knucklePlateShape.moveTo(-0.034, -0.014);
-    knucklePlateShape.lineTo(0.034, -0.012);
-    knucklePlateShape.lineTo(0.038, 0.006);
-    knucklePlateShape.lineTo(0.024, 0.016);
-    knucklePlateShape.lineTo(-0.024, 0.016);
-    knucklePlateShape.lineTo(-0.038, 0.004);
-    knucklePlateShape.closePath();
-    const knucklePlateGeo = trackGeo(
-      new THREE.ExtrudeGeometry(knucklePlateShape, {
-        depth: 0.007,
-        bevelEnabled: true,
-        bevelThickness: 0.0022,
-        bevelSize: 0.002,
-        bevelSegments: 2,
-      }),
-    );
-    knucklePlateGeo.rotateY(-Math.PI / 2);
-    const knucklePlate = new THREE.Mesh(knucklePlateGeo, brutalistArmorMat);
-    knucklePlate.position.set(-0.059, -0.026, -0.274);
-    knucklePlate.rotation.set(0.06, 0.16, -0.14);
-    group.add(knucklePlate);
-
-    // 5. Sculpted Thenar Muscle (Thumb Base Pad) & First Interosseous Thumb-Index Webbing
-    const thenarGeo = trackGeo(new THREE.SphereGeometry(1, 14, 12));
-    const thenarPad = new THREE.Mesh(thenarGeo, skinMat);
-    thenarPad.scale.set(0.0165, 0.022, 0.029);
-    thenarPad.position.set(-0.047, -0.01, -0.236);
-    thenarPad.rotation.set(0.35, 0.22, -0.24);
-    group.add(thenarPad);
-
-    const thumbWeb = new THREE.Mesh(thenarGeo, skinMat);
-    thumbWeb.scale.set(0.011, 0.015, 0.022);
-    thumbWeb.position.set(-0.043, 0.003, -0.27);
-    thumbWeb.rotation.set(0.45, 0.15, -0.18);
-    group.add(thumbWeb);
-
-    // 6. Articulated Bare Human Thumb (7-Station Anatomical Joint Profile + Curved Thumbnail)
-    const thumbGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(-0.051, -0.014, -0.224), // CMC base inside thenar
-          new THREE.Vector3(-0.048, 0.002, -0.246), // Proximal shaft
-          new THREE.Vector3(-0.045, 0.014, -0.268), // MCP joint swell
-          new THREE.Vector3(-0.041, 0.024, -0.288), // IP knuckle joint swell
-          new THREE.Vector3(-0.037, 0.03, -0.305), // Distal phalanx
-          new THREE.Vector3(-0.0345, 0.032, -0.318), // Rounded thumb pad
-        ],
-        [
-          [0.0148, 0.0138],
-          [0.0118, 0.011],
-          [0.0124, 0.0116], // subtle anatomical knuckle swell
-          [0.0108, 0.0102], // IP joint swell
-          [0.0092, 0.0082],
-          [0.0082, 0.0068],
-        ],
-        16,
-        20,
-        true,
-        true,
-      ),
-    );
-    group.add(new THREE.Mesh(thumbGeo, skinMat));
-
-    // Natural curved thumbnail nestled on top of distal thumb phalanx
-    const thumbNail = new THREE.Mesh(trackGeo(new THREE.SphereGeometry(1, 10, 8)), fingernailMat);
-    thumbNail.scale.set(0.0046, 0.0022, 0.0078);
-    thumbNail.position.set(-0.038, 0.0362, -0.312);
-    thumbNail.rotation.set(-0.18, -0.16, 0.42);
-    group.add(thumbNail);
-
-    // 7. Four Anatomically Articulated Bare Human Fingers with MCP/PIP/DIP Joint Contours Wrapping Under Handguard
-    const fingerSpecs: Array<{
-      z: number;
-      yOff: number;
-      rBase: number;
-      rPip: number;
-      rDip: number;
-      rTip: number;
-      curlReach: number;
-    }> = [
-      { z: -0.298, yOff: 0.0, rBase: 0.0094, rPip: 0.009, rDip: 0.0079, rTip: 0.0066, curlReach: 0.033 }, // Index
-      { z: -0.28, yOff: -0.001, rBase: 0.0098, rPip: 0.0093, rDip: 0.0082, rTip: 0.0069, curlReach: 0.035 }, // Middle
-      { z: -0.262, yOff: -0.002, rBase: 0.0089, rPip: 0.0084, rDip: 0.0074, rTip: 0.0062, curlReach: 0.032 }, // Ring
-      { z: -0.245, yOff: -0.0035, rBase: 0.0078, rPip: 0.0073, rDip: 0.0065, rTip: 0.0054, curlReach: 0.026 }, // Pinky
-    ];
-
-    const knuckleGeo = trackGeo(new THREE.SphereGeometry(0.0095, 10, 10));
-    for (let i = 0; i < fingerSpecs.length; i++) {
-      const f = fingerSpecs[i];
-      // Exposed MCP bare knuckle joint emerging cleanly from the brutalist half-glove edge
-      const mcp = new THREE.Mesh(knuckleGeo, skinMat);
-      const ks = f.rBase / 0.0094;
-      mcp.scale.set(0.86 * ks, 0.94 * ks, 1.04 * ks);
-      mcp.position.set(-0.043, -0.031 + f.yOff, f.z);
-      group.add(mcp);
-
-      // Multi-joint articulated finger loft with subtle PIP/DIP knuckle swells
-      const fGeo = trackGeo(
-        this.buildLoftedLimb(
-          [
-            new THREE.Vector3(-0.041, -0.029 + f.yOff, f.z),
-            new THREE.Vector3(-0.03, -0.037 + f.yOff, f.z - 0.001),
-            new THREE.Vector3(-0.015, -0.041 + f.yOff, f.z - 0.002),
-            new THREE.Vector3(0.008, -0.04 + f.yOff, f.z - 0.003),
-            new THREE.Vector3(0.024, -0.031 + f.yOff, f.z - 0.002),
-            new THREE.Vector3(f.curlReach, -0.019 + f.yOff, f.z - 0.001),
-          ],
-          [
-            [f.rBase, f.rBase * 0.95],
-            [f.rBase * 0.92, f.rBase * 0.9],
-            [f.rPip, f.rPip * 0.96], // PIP knuckle joint
-            [f.rPip * 0.88, f.rPip * 0.85],
-            [f.rDip, f.rDip * 0.94], // DIP knuckle joint
-            [f.rTip, f.rTip * 0.88],
-          ],
-          14,
-          18,
-          true,
-          true,
-          new THREE.Vector3(0, 0, 1),
-        ),
-      );
-      group.add(new THREE.Mesh(fGeo, skinMat));
-    }
-
+  private buildEquipmentModel(id: WeaponId): THREE.Group {
+    const group = buildArmoryWeapon(id, this.textures, this.geometries, this.materials);
+    const hands = buildOperatorHands(id, this.textures, this.geometries, this.materials);
+    group.add(hands.left, hands.right);
+    group.userData.supportHand = hands.left;
+    const animated = [hands.left, hands.right, group.getObjectByName('slide')].filter(Boolean) as THREE.Object3D[];
+    batchDecoration(group, new Set(), new Set(animated), this.geometries, true);
     return group;
   }
 
-  private buildTacticalRightArm(
-    trackGeo: <T extends THREE.BufferGeometry>(g: T) => T,
-    sleeveMat: THREE.Material,
-    skinMat: THREE.Material,
-    fingernailMat: THREE.Material,
-    brutalistGloveMat: THREE.Material,
-    brutalistArmorMat: THREE.Material,
-  ): THREE.Group {
-    const rightArm = new THREE.Group();
-
-    // Continuous right sleeve forearm entering from lower-right off-screen
-    const rSleeveGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(0.175, -0.25, 0.44),
-          new THREE.Vector3(0.105, -0.175, 0.305),
-          new THREE.Vector3(0.064, -0.128, 0.212),
-          new THREE.Vector3(0.056, -0.119, 0.198),
-        ],
-        [
-          [0.052, 0.048],
-          [0.044, 0.041],
-          [0.039, 0.037],
-          [0.028, 0.026],
-        ],
-        18,
-        18,
-        false,
-        false,
-      ),
-    );
-    rightArm.add(new THREE.Mesh(rSleeveGeo, sleeveMat));
-
-    // Seamless bare human right wrist & contoured hand gripping the pistol grip
-    const rHandGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(0.072, -0.138, 0.228),
-          new THREE.Vector3(0.048, -0.112, 0.184),
-          new THREE.Vector3(0.026, -0.098, 0.15),
-          new THREE.Vector3(0.016, -0.095, 0.124),
-        ],
-        [
-          [0.027, 0.023],
-          [0.025, 0.02],
-          [0.034, 0.019],
-          [0.028, 0.017],
-        ],
-        18,
-        18,
-        false,
-        true,
-      ),
-    );
-    rightArm.add(new THREE.Mesh(rHandGeo, skinMat));
-
-    // Matching brutalist fingerless half-glove wrap & carbon dorsal guard on right hand
-    const rGloveGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(0.042, -0.108, 0.174),
-          new THREE.Vector3(0.026, -0.098, 0.15),
-          new THREE.Vector3(0.018, -0.095, 0.13),
-        ],
-        [
-          [0.027, 0.021],
-          [0.0355, 0.0205],
-          [0.03, 0.0185],
-        ],
-        16,
-        10,
-        false,
-        false,
-      ),
-    );
-    rightArm.add(new THREE.Mesh(rGloveGeo, brutalistGloveMat));
-
-    const rKnuckleGuard = new THREE.Mesh(trackGeo(craftedBox(0.01, 0.044, 0.026)), brutalistArmorMat);
-    rKnuckleGuard.position.set(0.037, -0.096, 0.136);
-    rKnuckleGuard.rotation.x = 0.26;
-    rightArm.add(rKnuckleGuard);
-
-    // Right bare thumb wrapping securely around the upper-left grip backstrap
-    const rThumbGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(0.014, -0.072, 0.156),
-          new THREE.Vector3(-0.008, -0.064, 0.16),
-          new THREE.Vector3(-0.024, -0.066, 0.142),
-        ],
-        [
-          [0.011, 0.0105],
-          [0.0098, 0.0092],
-          [0.0082, 0.0074],
-        ],
-        12,
-        10,
-        true,
-        true,
-      ),
-    );
-    rightArm.add(new THREE.Mesh(rThumbGeo, skinMat));
-
-    // Right articulated bare trigger finger resting cleanly on the machined steel trigger
-    const triggerFingerGeo = trackGeo(
-      this.buildLoftedLimb(
-        [
-          new THREE.Vector3(0.024, -0.076, 0.134),
-          new THREE.Vector3(0.026, -0.072, 0.106),
-          new THREE.Vector3(0.018, -0.073, 0.084),
-          new THREE.Vector3(0.004, -0.075, 0.068),
-        ],
-        [
-          [0.0088, 0.0085],
-          [0.0084, 0.0081],
-          [0.0076, 0.0072],
-          [0.0064, 0.0058],
-        ],
-        12,
-        12,
-        true,
-        true,
-      ),
-    );
-    rightArm.add(new THREE.Mesh(triggerFingerGeo, skinMat));
-
-    const triggerNail = new THREE.Mesh(trackGeo(new THREE.SphereGeometry(1, 8, 6)), fingernailMat);
-    triggerNail.scale.set(0.0038, 0.0018, 0.0062);
-    triggerNail.position.set(0.008, -0.072, 0.07);
-    rightArm.add(triggerNail);
-
-    // Three bare lower fingers wrapping cleanly around the pistol grip frontstrap
-    for (let f = 0; f < 3; f++) {
-      const yOff = -0.095 - f * 0.017;
-      const zOff = 0.135 + f * 0.005;
-      const gFingerGeo = trackGeo(
-        this.buildLoftedLimb(
-          [
-            new THREE.Vector3(0.022, yOff, zOff),
-            new THREE.Vector3(0.016, yOff - 0.002, zOff - 0.024),
-            new THREE.Vector3(-0.016, yOff - 0.002, zOff - 0.026),
-          ],
-          [
-            [0.0085 - f * 0.0006, 0.0082 - f * 0.0006],
-            [0.0078 - f * 0.0005, 0.0076 - f * 0.0005],
-            [0.0066 - f * 0.0004, 0.0062 - f * 0.0004],
-          ],
-          10,
-          10,
-          true,
-          true,
-          new THREE.Vector3(0, 1, 0),
-        ),
-      );
-      rightArm.add(new THREE.Mesh(gFingerGeo, skinMat));
-    }
-
-    return rightArm;
-  }
-
   public setWeapon(id: WeaponId) {
-    if (this.activeWeapon === id) return;
-    this.activeWeapon = id;
+    if (this.equippedWeapon === id) return;
+    this.equippedWeapon = id;
+    this.activeWeapon = id === 'railpistol' ? 'railpistol' : 'carbine';
+    for (const [key, model] of this.equipmentModels) model.visible = key === id;
+    if (id !== 'carbine' && id !== 'railpistol' && !this.equipmentModels.has(id)) {
+      const model = this.buildEquipmentModel(id);
+      this.equipmentModels.set(id, model);
+      this.weaponPivot.add(model);
+    }
     this.swapBlend = 1;
+    const equipment = this.equipmentModels.get(id);
+    this.activeSlide = equipment?.getObjectByName('slide');
+    this.boltKick = 0;
     this.carbineGroup.visible = id === 'carbine';
     this.railGroup.visible = id === 'railpistol';
     this.muzzleFlashGroup.position.set(
       0,
       id === 'carbine' ? 0.012 : 0.014,
-      id === 'carbine' ? -0.74 : -0.85,
+      id === 'carbine' ? -0.74 : id === 'railpistol' ? -0.85 : ['usp','deagle','glock'].includes(id) ? -0.48 : id === 'rpg' ? -1.25 : id === 'grenadelauncher' ? -0.82 : -0.93,
     );
     this.muzzleLight.color.setHex(id === 'carbine' ? 0xff9d3b : 0xffb357);
+    if (equipment?.userData.flashOrigin) {
+      this.muzzleFlashGroup.position.copy(equipment.userData.flashOrigin);
+    }
+  }
+
+  public triggerGrenadeThrow(id: GrenadeId) {
+    if (!this.throwableModels.has(id)) {
+      const group = new THREE.Group();
+      const hands = buildOperatorHands('glock', this.textures, this.geometries, this.materials);
+      hands.left.position.set(-0.04,0.052,-0.025);
+      const grenade = buildThrowable(id,this.textures,this.geometries,this.materials);
+      grenade.position.set(0,-0.072,-0.226);
+      group.add(hands.left,hands.right,grenade);
+      group.userData.pinHand=hands.left;
+      group.userData.grenade=grenade;
+      this.throwableModels.set(id,group); this.root.add(group);
+    }
+    if(this.activeThrowable) this.activeThrowable.visible=false;
+    this.activeThrowable=this.throwableModels.get(id)!;
+    this.activeThrowable.visible=true; this.throwTimer=0.68;
+  }
+
+  public cancelGrenadeThrow() {
+    this.throwTimer=0;
+    if(this.activeThrowable) this.activeThrowable.visible=false;
+    this.weaponPivot.visible=true;
   }
 
   public triggerShot(kickZ: number, kickPitch: number) {
@@ -1798,7 +1127,7 @@ export class FirstPersonWeaponRig {
   public setScopeOverlayHidden(hidden: boolean) {
     if (this.scopeHidden === hidden) return;
     this.scopeHidden = hidden;
-    this.weaponPivot.visible = !hidden;
+    this.weaponPivot.visible = !hidden && this.throwTimer<=0;
   }
 
   public getMuzzleWorldPosition(target: THREE.Vector3): THREE.Vector3 {
@@ -1842,6 +1171,20 @@ export class FirstPersonWeaponRig {
     reloadEmpty = false,
     inspecting = false,
   ) {
+    this.throwTimer=Math.max(0,this.throwTimer-dt);
+    const throwing=this.throwTimer>0;
+    this.weaponPivot.visible=!throwing && !this.scopeHidden;
+    if(this.activeThrowable) {
+      this.activeThrowable.visible=throwing;
+      const t=1-this.throwTimer/0.68;
+      const pin=this.activeThrowable.userData.pinHand as THREE.Group;
+      pin.position.x=-0.04-Math.min(1,t*3)*0.055;
+      pin.position.y=0.052+Math.sin(t*Math.PI)*0.045;
+      const release=Math.max(0,(t-.48)/.52);
+      this.activeThrowable.position.set(.15,-.12+Math.sin(release*Math.PI)*.16,-.15-release*.2);
+      this.activeThrowable.rotation.x=-release*1.25;
+      (this.activeThrowable.userData.grenade as THREE.Group).visible=t<.56;
+    }
     // 1. Muzzle flash decay & flicker
     if (this.muzzleFlashTimer > 0) {
       this.muzzleFlashTimer -= dt;
@@ -1894,7 +1237,7 @@ export class FirstPersonWeaponRig {
     this.landDip = THREE.MathUtils.clamp(this.landDip + this.landDipVel * dt, -0.042, 0.014);
 
     // 5. Smooth ADS, Sprint low-ready, Crouch stability, Inspect, Swap & Inertial Look Sway
-    const canInspect = inspecting && !ads && !reloading && !sprinting;
+    const canInspect = inspecting && !ads && !reloading && !sprinting && !throwing;
     this.inspectBlend = THREE.MathUtils.damp(this.inspectBlend, canInspect ? 1 : 0, canInspect ? 7.2 : 14.0, dt);
     if (canInspect) {
       this.inspectPhase += dt;
@@ -1903,7 +1246,7 @@ export class FirstPersonWeaponRig {
       this.inspectBlend = 0;
     }
 
-    const targetAds = ads && !reloading ? 1 : 0;
+    const targetAds = ads && !reloading && !throwing ? 1 : 0;
     const adsLambda = this.activeWeapon === 'railpistol' ? 11.5 : 15.5;
     this.currentAds = THREE.MathUtils.damp(this.currentAds, targetAds, adsLambda, dt);
     this.sprintBlend = THREE.MathUtils.damp(this.sprintBlend, sprinting && !ads && !reloading ? 1 : 0, 10, dt);
@@ -2241,6 +1584,7 @@ export class FirstPersonWeaponRig {
 
     // Apply bolt, magazine & articulated left arm transforms
     this.carbineBolt.position.z = carbineBoltZ;
+    if (this.activeSlide) this.activeSlide.position.z = this.boltKick * 0.024;
     this.railBolt.position.z = railBoltZ;
 
     this.carbineMag.position.set(magOffsetX, -0.056 + magOffsetY, -0.088 + magOffsetZ);
@@ -2263,9 +1607,22 @@ export class FirstPersonWeaponRig {
       this.leftArmRestPos.z + armOffsetZ,
     );
 
+    const equipment = this.equipmentModels.get(this.equippedWeapon);
+    const support = equipment?.userData.supportHand as THREE.Group | undefined;
+    if (support) {
+      support.position.set(armOffsetX, armOffsetY, armOffsetZ);
+      support.rotation.set(armRotX, armRotY, armRotZ);
+    }
+
     // 8. Compose Realistic Camera-Space Tactical Transform (Hip / ADS / Sprint Low-Ready / Crouch Cant / Inspect)
-    const hipPos = this.activeWeapon === 'carbine' ? this.hipPosCarbine : this.hipPosRail;
-    const adsPos = this.activeWeapon === 'carbine' ? this.adsPosCarbine : this.adsPosRail;
+    const hipPos = ['usp','glock','deagle'].includes(this.equippedWeapon) ? this.hipPosPistol
+      : ['machinegun','rpg'].includes(this.equippedWeapon) ? this.hipPosHeavy
+      : this.activeWeapon === 'carbine' ? this.hipPosCarbine : this.hipPosRail;
+    const adsPos = ['usp', 'glock', 'deagle'].includes(this.equippedWeapon) ? this.adsPosPistol
+      : this.equippedWeapon === 'marksman' ? this.adsPosMarksman
+      : this.equippedWeapon === 'railpistol' ? this.adsPosRail
+      : this.equippedWeapon === 'carbine' ? this.adsPosCarbine
+      : this.equippedWeapon === 'machinegun' ? this.adsPosMarksman : this.adsPosIron;
     const hipRot = this.activeWeapon === 'carbine' ? this.hipRotCarbine : this.hipRotRail;
     const adsRot = this.activeWeapon === 'carbine' ? this.adsRotCarbine : this.adsRotRail;
 

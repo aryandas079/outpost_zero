@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { craftedBox } from './geometry';
 import { ProceduralTextures } from './textures';
+import { tailoredLimb } from './operatorModels';
 
 export type EnemyKind = 'striker' | 'sentinel' | 'wasp';
 
@@ -109,10 +110,10 @@ export class EnemyFactory {
 
     // Sculpted upper thigh
     const thigh = new THREE.Mesh(
-      this.trackGeo(new THREE.CapsuleGeometry(0.088 * scale, 0.29 * scale, 6, 12)),
+      this.trackGeo(tailoredLimb([[0,-0.02*scale,0],[0,-0.20*scale,0.013*scale],[0,-0.41*scale,0]],
+        [[0.098*scale,0.098*scale],[0.09*scale,0.083*scale],[0.067*scale,0.064*scale]],16,14)),
       pantsMat,
     );
-    thigh.position.set(0, -0.22 * scale, 0);
     tagHit(thigh, false);
     hip.add(thigh);
 
@@ -140,10 +141,10 @@ export class EnemyFactory {
 
     // Tapered calf / shin
     const shin = new THREE.Mesh(
-      this.trackGeo(new THREE.CapsuleGeometry(0.072 * scale, 0.28 * scale, 6, 12)),
+      this.trackGeo(tailoredLimb([[0,-0.015*scale,0],[0,-0.17*scale,-0.012*scale],[0,-0.37*scale,0]],
+        [[0.065*scale,0.066*scale],[0.074*scale,0.067*scale],[0.053*scale,0.049*scale]],16,14)),
       pantsMat,
     );
-    shin.position.set(0, -0.21 * scale, -0.01 * scale);
     tagHit(shin, false);
     knee.add(shin);
 
@@ -161,6 +162,15 @@ export class EnemyFactory {
     );
     bootFoot.position.set(0, -0.425 * scale, 0.058 * scale);
     knee.add(bootFoot);
+    const sole = new THREE.Mesh(this.trackGeo(craftedBox(0.14*scale,0.025*scale,0.278*scale)),bootMat);
+    sole.position.set(0,-0.465*scale,0.058*scale); knee.add(sole);
+    // Crossed laces and fabric compression folds keep the silhouette grounded.
+    for(let i=0;i<4;i++) {
+      const lace = new THREE.Mesh(this.trackGeo(craftedBox(0.072*scale,0.004*scale,0.006*scale)),kneePadMat);
+      lace.position.set(0,-0.35*scale+i*0.018*scale,0.069*scale); lace.rotation.z=i%2?0.16:-0.16; knee.add(lace);
+      const fold = new THREE.Mesh(this.trackGeo(new THREE.TorusGeometry(0.067*scale,0.005*scale,4,14)),pantsMat);
+      fold.rotation.x=Math.PI/2; fold.scale.z=0.75; fold.position.set(0,-0.08*scale-i*0.075*scale,0); knee.add(fold);
+    }
 
     return { hip, knee };
   }
@@ -329,7 +339,7 @@ export class EnemyFactory {
         map: this.textures.tacticalSleeveColor,
         bumpMap: this.textures.tacticalSleeveBump,
         bumpScale: 0.005,
-        color: heavy ? 0x3b423c : 0x4b463e,
+        color: heavy ? 0x9a9b87 : 0xb2aba0,
         roughness: 0.9,
         metalness: 0.05,
       });
@@ -337,7 +347,7 @@ export class EnemyFactory {
         map: this.textures.tacticalSleeveColor,
         bumpMap: this.textures.tacticalSleeveBump,
         bumpScale: 0.003,
-        color: heavy ? 0x2d3236 : 0x3a3d40,
+        color: heavy ? 0x858b86 : 0x92958f,
         roughness: 0.92,
         metalness: 0.04,
       });
@@ -345,28 +355,34 @@ export class EnemyFactory {
         map: this.textures.tacticalSleeveColor,
         bumpMap: this.textures.tacticalSleeveBump,
         bumpScale: 0.008,
-        color: heavy ? 0x252c28 : 0x2c3035,
+        color: heavy ? 0x808572 : 0x808985,
         roughness: 0.82,
         metalness: 0.16,
       });
       const gearAccentMat = makeMat({
-        color: heavy ? 0x61543d : 0x564b3b,
+        map: this.textures.tacticalSleeveColor,
+        bumpMap: this.textures.tacticalSleeveBump,
+        bumpScale: 0.0007,
+        color: heavy ? 0xc1af8c : 0xa6ad91,
         roughness: 0.84,
         metalness: 0.12,
       });
       const bootMat = makeMat({
-        color: 0x1c1a18,
+        map: this.textures.tacticalGloveColor,
+        normalMap: this.textures.tacticalGloveNormal,
+        normalScale: new THREE.Vector2(0.18,0.18),
+        color: 0x7b7b77,
         roughness: 0.78,
         metalness: 0.14,
       });
       const helmetMat = makeMat({
-        map: this.textures.gunMetalColor,
+        map: this.textures.tacticalSleeveColor,
         normalMap: this.textures.gunMetalNormal,
         normalScale: new THREE.Vector2(0.32, 0.32),
         roughnessMap: this.textures.gunMetalRoughness,
-        color: heavy ? 0x313834 : 0x34383b,
+        color: heavy ? 0xa4a086 : 0x858c78,
         roughness: 0.62,
-        metalness: 0.34,
+        metalness: 0.08,
       });
       const balaclavaMat = makeMat({
         map: this.textures.tacticalGloveColor,
@@ -460,6 +476,20 @@ export class EnemyFactory {
       frontPlate.position.set(0, 0.41 * scale, 0.145 * scale);
       tagHit(frontPlate, false);
       torsoGroup.add(frontPlate);
+      const webbing = this.trackGeo(craftedBox((heavy ? 0.36 : 0.29) * scale, 0.016 * scale, 0.009 * scale));
+      for (const y of [0.39, 0.43, 0.47]) {
+        const row = new THREE.Mesh(webbing, gearAccentMat);
+        row.position.set(0, y * scale, 0.195 * scale);
+        torsoGroup.add(row);
+      }
+      const strapGeo = this.trackGeo(new THREE.TorusGeometry(0.117 * scale, 0.021 * scale, 8, 16, Math.PI));
+      for (const side of [-1, 1]) {
+        const strap = new THREE.Mesh(strapGeo, vestMat);
+        strap.rotation.y = Math.PI / 2;
+        strap.scale.x = 1.32;
+        strap.position.set(side * 0.131 * scale, 0.556 * scale, 0);
+        torsoGroup.add(strap);
+      }
 
       const backPlate = new THREE.Mesh(
         this.trackGeo(craftedBox((heavy ? 0.4 : 0.32) * scale, 0.39 * scale, 0.1 * scale)),
@@ -567,6 +597,35 @@ export class EnemyFactory {
       goggles.position.set(0, 0.165 * scale, 0.108 * scale);
       tagHit(goggles, true);
       headGroup.add(goggles);
+      goggles.name = 'Ballistic goggles';
+      // Rubber goggle seal, helmet rails and a boom microphone.
+      const detail = (parent: THREE.Group, w: number,h: number,d: number,x: number,y: number,z: number,mat: THREE.Material) => {
+        const m = new THREE.Mesh(this.trackGeo(craftedBox(w*scale,h*scale,d*scale)),mat);
+        m.position.set(x*scale,y*scale,z*scale); parent.add(m); return m;
+      };
+      for(const sign of [-1,1]) {
+        detail(headGroup,0.014,0.026,0.14,sign*0.124,0.21,0.01,bootMat);
+        detail(headGroup,0.016,0.02,0.16,sign*0.115,0.163,0,bootMat);
+        detail(headGroup,0.032,0.053,0.012,sign*0.09,0.14,0.119,bootMat);
+        for(let i=0;i<3;i++) detail(headGroup,0.017,0.018,0.009,sign*0.13,0.21,-0.03+i*0.03,gearAccentMat);
+        const strap=detail(headGroup,0.012,0.12,0.009,sign*0.082,0.07,0.067,bootMat); strap.rotation.z=sign*0.3;
+      }
+      const micCurve = new THREE.CatmullRomCurve3([new THREE.Vector3(-0.13,0.14,0.02),new THREE.Vector3(-0.15,0.08,0.12),new THREE.Vector3(-0.04,0.075,0.14)].map(p=>p.multiplyScalar(scale)));
+      headGroup.add(new THREE.Mesh(this.trackGeo(new THREE.TubeGeometry(micCurve,12,0.004*scale,5,false)),bootMat));
+      detail(headGroup,0.028,0.016,0.016,-0.04,0.075,0.14,bootMat);
+      // Pouch closures, carrier stitching, radio and quick-release buckles.
+      for(const x of [-0.095,0,0.095]) {
+        detail(torsoGroup,0.071,0.025,0.061,x,0.345,0.202,vestMat);
+        detail(torsoGroup,0.012,0.085,0.005,x,0.297,0.231,bootMat);
+      }
+      for(const sign of [-1,1]) {
+        detail(torsoGroup,0.03,0.043,0.018,sign*0.126,0.55,0.158,bootMat);
+        detail(torsoGroup,0.055,0.08,0.035,sign*0.19,0.34,0.13,gearAccentMat);
+      }
+      detail(torsoGroup,0.055,0.13,0.047,-0.21,0.43,0.05,bootMat);
+      detail(torsoGroup,0.006,0.24,0.006,-0.21,0.60,0.05,bootMat);
+      detail(torsoGroup,0.063,0.04,0.011,0.072,0.5,0.198,gearAccentMat);
+      detail(torsoGroup,0.036,0.025,0.012,0.072,0.5,0.205,bootMat);
 
       // 4. Articulated Two-Handed Rifle Stance & Weapon Assembly
       const weaponGroup = new THREE.Group();
