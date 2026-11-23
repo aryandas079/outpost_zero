@@ -1096,11 +1096,6 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
   addWalkablePad(3.8, 0.06, 5.4, 30.2, 18.8, steelPlateMat, true);
   addWalkablePad(3.4, 0.06, 5.8, -34.8, 14.0, steelPlateMat, true);
 
-  // Tempered Reinforced Glass Utility Skylight / Vault Observation Panels (framed in bolted iron)
-  addWalkablePad(3.4, 0.055, 2.8, -10.8, 1.4, floorGlassMat, true);
-  addWalkablePad(3.6, 0.055, 3.6, 24.4, 2.2, floorGlassMat, true);
-  addWalkablePad(3.2, 0.055, 2.6, 4.2, -2.2, floorGlassMat, true);
-
   // Helper: Sculpted Multi-Strata Sandstone Butte / Canyon Ridge (organic displaced rock, zero generic boxes!)
   const addSculptedMesa = (
     x: number,
@@ -1531,8 +1526,13 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
       parentObj.add(m);
       // Raised lap boards give the facades a real silhouette and self-shadowing.
       // The backing wall remains the uninterrupted collision / bullet surface.
-      if ((mat === woodLightMat || mat === woodDarkMat || mat === woodRedMat) &&
-          bh > 2 && Math.min(bw, bd) > 0.35 && Math.min(bw, bd) < 0.5 && Math.max(bw, bd) > 1.5) {
+      const isLapSidedWall =
+        (mat === woodLightMat || mat === woodDarkMat || mat === woodRedMat) &&
+        bh > 2 &&
+        Math.min(bw, bd) > 0.35 &&
+        Math.min(bw, bd) < 0.5 &&
+        Math.max(bw, bd) > 1.5;
+      if (isLapSidedWall) {
         const alongX = bw > bd;
         const span = alongX ? bw : bd;
         const rows = Math.ceil(bh / 0.26);
@@ -1558,7 +1558,14 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
           }
         }
       }
-      if (collide) pushLocalCollider(lx, ly, lz, bw, bh, bd);
+      // Expand exterior/partition wall colliders along their thin axis by +0.08m so protruding lap boards,
+      // shutters, and trim never allow the player or camera to rub into facade geometry.
+      if (collide) {
+        const padThin = bh > 2 && Math.min(bw, bd) >= 0.35 && Math.min(bw, bd) <= 0.52 ? 0.08 : 0;
+        const colW = bw <= bd ? bw + padThin : bw;
+        const colD = bd < bw ? bd + padThin : bd;
+        pushLocalCollider(lx, ly, lz, colW, bh, colD);
+      }
       if (shootable) shootableMeshes.push(m);
       return m;
     };
@@ -1852,6 +1859,17 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         shootableMeshes.push(stairMesh);
         walkableMeshes.push(stairMesh);
 
+        // Solid stepped structural core underneath the staircase wedge so players/enemies can NEVER
+        // walk into the hollow side or underside of the stairs and see through single-sided planks.
+        const stairCoreSlices = 6;
+        const sliceLen = stairLen / stairCoreSlices;
+        for (let si = 1; si < stairCoreSlices; si++) {
+          const sliceMidZ = stairStartZ + (si + 0.5) * sliceLen;
+          const rampH = ((si + 0.15) / stairCoreSlices) * story1H;
+          const solidH = Math.max(0.25, rampH - 0.28);
+          pushLocalCollider(stairLocalX, floorH + solidH * 0.5, sliceMidZ, stairW - 0.14, solidH, sliceLen);
+        }
+
         // Register world-space walkable ramp corresponding to staircase
         const pLowX = cx + stairLocalX * cosR + stairStartZ * sinR;
         const pLowZ = cz - stairLocalX * sinR + stairStartZ * cosR;
@@ -2093,7 +2111,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         bGroup.add(rafter);
       }
 
-      // Porch roof deck (walkable balcony deck if 2-story!)
+      // Porch roof deck (walkable balcony deck if 2-story — always solid so players never clip through!)
       if (twoStory) {
         const balconyDeck = addPart(
           w + 0.4,
@@ -2103,7 +2121,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
           ceilingY,
           d / 2 + porchDepth / 2,
           woodFloorMat,
-          balconyWalkable,
+          true,
           true,
           true,
         );
@@ -2112,11 +2130,9 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         addPart(w + 0.3, 0.14, 0.14, 0, ceilingY + 1.02, porchOuterZ, postMat, false, true, false);
         addPart(0.14, 0.14, porchDepth, -w / 2 - 0.08, ceilingY + 1.02, d / 2 + porchDepth / 2, postMat, false, true, false);
         addPart(0.14, 0.14, porchDepth, w / 2 + 0.08, ceilingY + 1.02, d / 2 + porchDepth / 2, postMat, false, true, false);
-        if (balconyWalkable) {
-          pushLocalCollider(0, ceilingY + 0.62, porchOuterZ, w + 0.3, 1.12, 0.22);
-          pushLocalCollider(-w / 2 - 0.08, ceilingY + 0.62, d / 2 + porchDepth / 2, 0.22, 1.12, porchDepth);
-          pushLocalCollider(w / 2 + 0.08, ceilingY + 0.62, d / 2 + porchDepth / 2, 0.22, 1.12, porchDepth);
-        }
+        pushLocalCollider(0, ceilingY + 0.62, porchOuterZ, w + 0.3, 1.12, 0.22);
+        pushLocalCollider(-w / 2 - 0.08, ceilingY + 0.62, d / 2 + porchDepth / 2, 0.22, 1.12, porchDepth);
+        pushLocalCollider(w / 2 + 0.08, ceilingY + 0.62, d / 2 + porchDepth / 2, 0.22, 1.12, porchDepth);
         const balusterCount = Math.floor(w / 0.9);
         for (let i = 0; i <= balusterCount; i++) {
           const bx = -w / 2 + (i / balusterCount) * w;
@@ -2126,7 +2142,7 @@ export function buildWestTownArena(textures: ProceduralTextures): ArenaData {
         }
         // Solid upper balcony corner support posts linking rail up to canopy
         for (const ux of [-w / 2 + 0.2, w / 2 - 0.2]) {
-          addPart(0.16, roofBaseY - ceilingY - 0.35, 0.16, ux, (roofBaseY - 0.25 + ceilingY) * 0.5, porchOuterZ, postMat, balconyWalkable, true, true);
+          addPart(0.16, roofBaseY - ceilingY - 0.35, 0.16, ux, (roofBaseY - 0.25 + ceilingY) * 0.5, porchOuterZ, postMat, true, true, true);
         }
         // Upper porch awning roof over 2nd-story balcony
         const upperCanopy = new THREE.Mesh(trackGeo(craftedBox(w + 0.5, 0.16, porchDepth + 0.3)), roofMat);

@@ -548,8 +548,8 @@ export class PhysicsWorld {
     for (let s = 0; s < subSteps; s++) {
       body.position.x += body.velocity.x * stepTime;
       body.position.z += body.velocity.z * stepTime;
-      // 2 iterative constraint passes per substep cleanly resolve multi-wall corners & pillars
-      for (let pass = 0; pass < 2; pass++) {
+      // 4 iterative constraint passes per substep cleanly resolve tight multi-wall corners & pillars
+      for (let pass = 0; pass < 4; pass++) {
         if (
           this.resolveCapsuleHorizontal(
             body.position,
@@ -671,6 +671,79 @@ export class PhysicsWorld {
       }
     }
     return hit;
+  }
+
+  /**
+   * Full 3D Sphere-vs-AABB camera standoff constraint (X, Y, and Z) so camera shake,
+   * crouching, or corner pushing can NEVER clip the near plane through any solid wall,
+   * ceiling, or building corner.
+   */
+  public resolveCameraSphere(center: THREE.Vector3, radius: number): boolean {
+    let anyHit = false;
+    const minBoundX = this.bounds.minX + radius;
+    const maxBoundX = this.bounds.maxX - radius;
+    const minBoundZ = this.bounds.minZ + radius;
+    const maxBoundZ = this.bounds.maxZ - radius;
+
+    for (let pass = 0; pass < 3; pass++) {
+      let passHit = false;
+      if (center.x < minBoundX) {
+        center.x = minBoundX;
+        passHit = true;
+      } else if (center.x > maxBoundX) {
+        center.x = maxBoundX;
+        passHit = true;
+      }
+      if (center.z < minBoundZ) {
+        center.z = minBoundZ;
+        passHit = true;
+      } else if (center.z > maxBoundZ) {
+        center.z = maxBoundZ;
+        passHit = true;
+      }
+
+      const count = this.queryAABB2D(center.x - radius - 0.04, center.x + radius + 0.04, center.z - radius - 0.04, center.z + radius + 0.04);
+      const rSq = radius * radius;
+      for (let i = 0; i < count; i++) {
+        const b = this.bodies[this.queryResults[i]];
+        if (center.y + radius <= b.minY || center.y - radius >= b.maxY) continue;
+        const cx = center.x < b.minX ? b.minX : center.x > b.maxX ? b.maxX : center.x;
+        const cy = center.y < b.minY ? b.minY : center.y > b.maxY ? b.maxY : center.y;
+        const cz = center.z < b.minZ ? b.minZ : center.z > b.maxZ ? b.maxZ : center.z;
+        const dx = center.x - cx;
+        const dy = center.y - cy;
+        const dz = center.z - cz;
+        const dSq = dx * dx + dy * dy + dz * dz;
+        if (dSq < rSq) {
+          if (dSq > 1e-8) {
+            const d = Math.sqrt(dSq);
+            const push = (radius - d + 0.002) / d;
+            center.x += dx * push;
+            center.y += dy * push;
+            center.z += dz * push;
+          } else {
+            // Camera center inside solid box: eject along shallowest face
+            const penMinX = Math.abs(center.x - b.minX);
+            const penMaxX = Math.abs(b.maxX - center.x);
+            const penMinY = Math.abs(center.y - b.minY);
+            const penMaxY = Math.abs(b.maxY - center.y);
+            const penMinZ = Math.abs(center.z - b.minZ);
+            const penMaxZ = Math.abs(b.maxZ - center.z);
+            const m = Math.min(penMinX, penMaxX, penMinY, penMaxY, penMinZ, penMaxZ);
+            if (m === penMinX) center.x = b.minX - radius - 0.002;
+            else if (m === penMaxX) center.x = b.maxX + radius + 0.002;
+            else if (m === penMinY) center.y = b.minY - radius - 0.002;
+            else if (m === penMaxY) center.y = b.maxY + radius + 0.002;
+            else if (m === penMinZ) center.z = b.minZ - radius - 0.002;
+            else center.z = b.maxZ + radius + 0.002;
+          }
+          passHit = true;
+        }
+      }
+      if (!passHit) break;
+      anyHit = true;
+    }
+    return anyHit;
   }
 
   /**

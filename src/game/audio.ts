@@ -1,4 +1,9 @@
 import * as THREE from 'three';
+import {
+  AudioDynamicRangePreset,
+  computeEnemyFootstepMix,
+  getAudioDynamicRangeSpec,
+} from './audioCompression';
 
 export type FootstepSurface = 'concrete' | 'metal' | 'glass' | 'wood' | 'dirt';
 
@@ -25,6 +30,15 @@ export class TacticalAudio {
   };
   private footParity = 1;
   private muted = false;
+  private dynamicRange: AudioDynamicRangePreset = 'balanced';
+
+  // Master Dynamic Range Compression Bus Graph
+  private loudBus: GainNode | null = null;
+  private subtleBus: GainNode | null = null;
+  private subtlePresenceFilter: BiquadFilterNode | null = null;
+  private compressor: DynamicsCompressorNode | null = null;
+  private makeupGain: GainNode | null = null;
+  private masterGain: GainNode | null = null;
 
   // Three.js PositionalAudio Spatial Ambient Engine
   private listener: THREE.AudioListener | null = null;
@@ -46,6 +60,7 @@ export class TacticalAudio {
       this.listener = listener;
       this.listenerCamera = camera;
       this.ctx = listener.context as AudioContext;
+      this.initMasterChain(this.ctx);
       this.listener.setMasterVolume(this.muted ? 0 : 1);
 
       this.initAudioBuffers(this.ctx);
@@ -123,10 +138,95 @@ export class TacticalAudio {
     if (this.listener) {
       this.listener.setMasterVolume(muted ? 0 : 1);
     }
+    if (this.masterGain && this.ctx) {
+      this.masterGain.gain.setTargetAtTime(muted ? 0 : 1, this.ctx.currentTime, 0.02);
+    }
   }
 
   public isMuted(): boolean {
     return this.muted;
+  }
+
+  public setDynamicRange(preset: AudioDynamicRangePreset) {
+    this.dynamicRange = getAudioDynamicRangeSpec(preset).id;
+    this.applyDynamicRangeParams();
+  }
+
+  public getDynamicRange(): AudioDynamicRangePreset {
+    return this.dynamicRange;
+  }
+
+  private initMasterChain(ctx: AudioContext) {
+    if (this.compressor && this.loudBus && this.subtleBus) return;
+    try {
+      const loudBus = ctx.createGain();
+      const subtleBus = ctx.createGain();
+      const presence = ctx.createBiquadFilter();
+      presence.type = 'peaking';
+      presence.frequency.value = 2400;
+      presence.Q.value = 1.1;
+      presence.gain.value = 0;
+
+      const compressor = ctx.createDynamicsCompressor();
+      const makeup = ctx.createGain();
+      const master = ctx.createGain();
+      master.gain.value = this.muted ? 0 : 1;
+
+      loudBus.connect(compressor);
+      subtleBus.connect(presence);
+      presence.connect(compressor);
+      compressor.connect(makeup);
+      makeup.connect(master);
+      master.connect(ctx.destination);
+
+      this.loudBus = loudBus;
+      this.subtleBus = subtleBus;
+      this.subtlePresenceFilter = presence;
+      this.compressor = compressor;
+      this.makeupGain = makeup;
+      this.masterGain = master;
+      this.applyDynamicRangeParams(true);
+    } catch {
+      // Fall back cleanly to ctx.destination if DynamicsCompressorNode is unavailable
+    }
+  }
+
+  private applyDynamicRangeParams(immediate = false) {
+    if (!this.ctx || !this.compressor || !this.loudBus || !this.subtleBus || !this.makeupGain || !this.subtlePresenceFilter) {
+      return;
+    }
+    const spec = getAudioDynamicRangeSpec(this.dynamicRange);
+    const now = this.ctx.currentTime;
+    const tc = 0.03;
+    if (immediate) {
+      this.compressor.threshold.value = spec.thresholdDb;
+      this.compressor.knee.value = spec.kneeDb;
+      this.compressor.ratio.value = spec.ratio;
+      this.compressor.attack.value = spec.attackSec;
+      this.compressor.release.value = spec.releaseSec;
+      this.makeupGain.gain.value = spec.makeupGain;
+      this.loudBus.gain.value = spec.combatPeakGain;
+      this.subtleBus.gain.value = spec.subtleCueGain;
+      this.subtlePresenceFilter.gain.value = spec.footstepPresenceDb;
+    } else {
+      this.compressor.threshold.setTargetAtTime(spec.thresholdDb, now, tc);
+      this.compressor.knee.setTargetAtTime(spec.kneeDb, now, tc);
+      this.compressor.ratio.setTargetAtTime(spec.ratio, now, tc);
+      this.compressor.attack.setTargetAtTime(spec.attackSec, now, tc);
+      this.compressor.release.setTargetAtTime(spec.releaseSec, now, tc);
+      this.makeupGain.gain.setTargetAtTime(spec.makeupGain, now, tc);
+      this.loudBus.gain.setTargetAtTime(spec.combatPeakGain, now, tc);
+      this.subtleBus.gain.setTargetAtTime(spec.subtleCueGain, now, tc);
+      this.subtlePresenceFilter.gain.setTargetAtTime(spec.footstepPresenceDb, now, tc);
+    }
+  }
+
+  private getLoudDestination(ctx: AudioContext): AudioNode {
+    return this.loudBus ?? ctx.destination;
+  }
+
+  private getSubtleDestination(ctx: AudioContext): AudioNode {
+    return this.subtleBus ?? ctx.destination;
   }
 
   public unlock() {
@@ -188,13 +288,14 @@ export class TacticalAudio {
     const perimeterWind = THREE.MathUtils.clamp((radialDist - 18) / 34, 0, 1) * 0.28;
     const t = this.ambientTime;
 
+    const drcAmbientDuck = getAudioDynamicRangeSpec(this.dynamicRange).ambientDuckGain;
     for (const entry of this.ambientNodes) {
       const gust = 0.78 + 0.22 * Math.sin(t * 0.42 + entry.phase) * Math.cos(t * 0.19 - entry.phase * 0.7);
       if (entry.kind === 'wind') {
         const indoorAtten = isIndoors ? 0.52 : 1.0;
         const weatherScale = 0.75 + weatherWindFactor * 0.55;
         const vol = entry.baseVolume * gust * weatherScale * (1 + elevationBoost + perimeterWind) * indoorAtten;
-        entry.audio.setVolume(vol * this.ambientMasterGain);
+        entry.audio.setVolume(vol * this.ambientMasterGain * drcAmbientDuck);
 
         // Indoors filters wind into a darker resonant hollow echo; outdoors opens the air band
         const targetCutoff = isIndoors
@@ -207,7 +308,7 @@ export class TacticalAudio {
         const mechBreath = 0.88 + 0.12 * Math.sin(t * 0.85 + entry.phase);
         const indoorBoost = isIndoors ? 1.12 : 1.0;
         const vol = entry.baseVolume * mechBreath * indoorBoost;
-        entry.audio.setVolume(vol * this.ambientMasterGain);
+        entry.audio.setVolume(vol * this.ambientMasterGain * drcAmbientDuck);
 
         const targetCutoff = entry.baseFreq * (isIndoors ? 0.72 : 1.05) + Math.sin(t * 0.7 + entry.phase) * 55;
         entry.filter.frequency.setTargetAtTime(Math.max(120, targetCutoff), this.ctx.currentTime, 0.12);
@@ -227,6 +328,7 @@ export class TacticalAudio {
         this.ctx = new AudioCtx();
       }
     }
+    this.initMasterChain(this.ctx);
     this.initAudioBuffers(this.ctx);
     if (this.ctx.state === 'suspended' && !this.muted) {
       this.ctx.resume().catch(() => {});
@@ -586,7 +688,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(42, now + 0.085);
     oscGain.gain.setValueAtTime(0.32, now);
     oscGain.gain.exponentialRampToValueAtTime(0.001, now + 0.095);
-    osc.connect(oscGain).connect(ctx.destination);
+    osc.connect(oscGain).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.1);
 
@@ -600,7 +702,7 @@ export class TacticalAudio {
     const noiseGain = ctx.createGain();
     noiseGain.gain.setValueAtTime(0.28, now);
     noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.075);
-    noise.connect(filter).connect(noiseGain).connect(ctx.destination);
+    noise.connect(filter).connect(noiseGain).connect(this.getLoudDestination(ctx));
     noise.start(now);
     noise.stop(now + 0.08);
 
@@ -612,7 +714,7 @@ export class TacticalAudio {
     click.frequency.exponentialRampToValueAtTime(800, now + 0.04);
     clickGain.gain.setValueAtTime(0.055, now + 0.015);
     clickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.045);
-    click.connect(clickGain).connect(ctx.destination);
+    click.connect(clickGain).connect(this.getSubtleDestination(ctx));
     click.start(now + 0.015);
     click.stop(now + 0.05);
   }
@@ -634,7 +736,7 @@ export class TacticalAudio {
     lp.frequency.exponentialRampToValueAtTime(220, now + 0.19);
     gain.gain.setValueAtTime(0.3, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.21);
-    osc.connect(lp).connect(gain).connect(ctx.destination);
+    osc.connect(lp).connect(gain).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.22);
 
@@ -646,7 +748,7 @@ export class TacticalAudio {
     snap.frequency.exponentialRampToValueAtTime(420, now + 0.11);
     snapGain.gain.setValueAtTime(0.16, now);
     snapGain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-    snap.connect(snapGain).connect(ctx.destination);
+    snap.connect(snapGain).connect(this.getLoudDestination(ctx));
     snap.start(now);
     snap.stop(now + 0.125);
 
@@ -659,7 +761,7 @@ export class TacticalAudio {
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.24, now);
     ng.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-    noise.connect(hp).connect(ng).connect(ctx.destination);
+    noise.connect(hp).connect(ng).connect(this.getLoudDestination(ctx));
     noise.start(now);
     noise.stop(now + 0.13);
   }
@@ -675,7 +777,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(400, now + 0.025);
     g.gain.setValueAtTime(0.1, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getSubtleDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.032);
   }
@@ -694,7 +796,7 @@ export class TacticalAudio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.06, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.065);
-    src.connect(bp).connect(g).connect(ctx.destination);
+    src.connect(bp).connect(g).connect(this.getSubtleDestination(ctx));
     src.start(now);
     src.stop(now + 0.07);
   }
@@ -718,7 +820,7 @@ export class TacticalAudio {
     const sg = ctx.createGain();
     sg.gain.setValueAtTime(0.14, now + 0.02);
     sg.gain.exponentialRampToValueAtTime(0.001, now + (isEmpty ? 0.13 : 0.18));
-    slide.connect(bp).connect(sg).connect(ctx.destination);
+    slide.connect(bp).connect(sg).connect(this.getSubtleDestination(ctx));
     slide.start(now + 0.02);
     slide.stop(now + 0.19);
 
@@ -744,7 +846,7 @@ export class TacticalAudio {
     const sg = ctx.createGain();
     sg.gain.setValueAtTime(0.13, now);
     sg.gain.exponentialRampToValueAtTime(0.001, now + 0.085);
-    slide.connect(bp).connect(sg).connect(ctx.destination);
+    slide.connect(bp).connect(sg).connect(this.getSubtleDestination(ctx));
     slide.start(now);
     slide.stop(now + 0.09);
 
@@ -756,7 +858,7 @@ export class TacticalAudio {
     thud.frequency.exponentialRampToValueAtTime(62, now + 0.14);
     tg.gain.setValueAtTime(0.24, now + 0.065);
     tg.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-    thud.connect(tg).connect(ctx.destination);
+    thud.connect(tg).connect(this.getSubtleDestination(ctx));
     thud.start(now + 0.065);
     thud.stop(now + 0.155);
 
@@ -783,7 +885,7 @@ export class TacticalAudio {
     const rg = ctx.createGain();
     rg.gain.setValueAtTime(0.16, now + 0.02);
     rg.gain.exponentialRampToValueAtTime(0.001, now + 0.105);
-    rail.connect(hp).connect(rg).connect(ctx.destination);
+    rail.connect(hp).connect(rg).connect(this.getSubtleDestination(ctx));
     rail.start(now + 0.02);
     rail.stop(now + 0.11);
 
@@ -798,7 +900,7 @@ export class TacticalAudio {
     lp.frequency.setValueAtTime(2400, now + 0.085);
     slamGain.gain.setValueAtTime(0.18, now + 0.085);
     slamGain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
-    slam.connect(lp).connect(slamGain).connect(ctx.destination);
+    slam.connect(lp).connect(slamGain).connect(this.getSubtleDestination(ctx));
     slam.start(now + 0.085);
     slam.stop(now + 0.165);
 
@@ -828,7 +930,7 @@ export class TacticalAudio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.055, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
-    src.connect(bp).connect(g).connect(ctx.destination);
+    src.connect(bp).connect(g).connect(this.getSubtleDestination(ctx));
     src.start(now);
     src.stop(now + 0.12);
   }
@@ -848,7 +950,7 @@ export class TacticalAudio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.08, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-    slide.connect(bp).connect(g).connect(ctx.destination);
+    slide.connect(bp).connect(g).connect(this.getSubtleDestination(ctx));
     slide.start(now);
     slide.stop(now + 0.08);
     this.mechClick(ctx, now + 0.015, 1620, 0.075);
@@ -870,7 +972,7 @@ export class TacticalAudio {
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.14, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
-    src.connect(bp).connect(g).connect(ctx.destination);
+    src.connect(bp).connect(g).connect(this.getSubtleDestination(ctx));
     src.start(now);
     src.stop(now + 0.36);
   }
@@ -883,7 +985,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(freq * 0.45, time + 0.045);
     g.gain.setValueAtTime(volume, time);
     g.gain.exponentialRampToValueAtTime(0.001, time + 0.05);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getSubtleDestination(ctx));
     osc.start(time);
     osc.stop(time + 0.055);
   }
@@ -892,6 +994,7 @@ export class TacticalAudio {
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
+    const dest = this.compressor ?? ctx.destination;
 
     if (crit) {
       const osc = ctx.createOscillator();
@@ -901,7 +1004,7 @@ export class TacticalAudio {
       osc.frequency.exponentialRampToValueAtTime(1480, now + 0.11);
       g.gain.setValueAtTime(0.22, now);
       g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-      osc.connect(g).connect(ctx.destination);
+      osc.connect(g).connect(dest);
       osc.start(now);
       osc.stop(now + 0.13);
     } else {
@@ -912,7 +1015,7 @@ export class TacticalAudio {
       osc.frequency.exponentialRampToValueAtTime(520, now + 0.045);
       g.gain.setValueAtTime(0.14, now);
       g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
-      osc.connect(g).connect(ctx.destination);
+      osc.connect(g).connect(dest);
       osc.start(now);
       osc.stop(now + 0.055);
     }
@@ -925,7 +1028,7 @@ export class TacticalAudio {
       osc2.frequency.exponentialRampToValueAtTime(660, now + 0.14);
       g2.gain.setValueAtTime(0.16, now + 0.02);
       g2.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
-      osc2.connect(g2).connect(ctx.destination);
+      osc2.connect(g2).connect(dest);
       osc2.start(now + 0.02);
       osc2.stop(now + 0.18);
     }
@@ -943,7 +1046,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(32, now + 0.28);
     g.gain.setValueAtTime(0.2, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.31);
 
@@ -956,7 +1059,7 @@ export class TacticalAudio {
     const ng = ctx.createGain();
     ng.gain.setValueAtTime(0.18, now);
     ng.gain.exponentialRampToValueAtTime(0.001, now + 0.27);
-    noise.connect(lp).connect(ng).connect(ctx.destination);
+    noise.connect(lp).connect(ng).connect(this.getLoudDestination(ctx));
     noise.start(now);
     noise.stop(now + 0.28);
   }
@@ -972,7 +1075,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(heavy ? 120 : 210, now + 0.14);
     g.gain.setValueAtTime(0.09, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.16);
   }
@@ -991,7 +1094,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(Math.max(30, 52 - 12 * scale), now + 0.13 + 0.06 * scale);
     g.gain.setValueAtTime(Math.min(0.46, 0.22 * scale + 0.08), now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.15 + 0.07 * scale);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.24 + 0.07 * scale);
 
@@ -1005,7 +1108,7 @@ export class TacticalAudio {
     const sg = ctx.createGain();
     sg.gain.setValueAtTime(Math.min(0.28, 0.12 * scale), now);
     sg.gain.exponentialRampToValueAtTime(0.001, now + 0.13 + 0.05 * scale);
-    slap.connect(lp).connect(sg).connect(ctx.destination);
+    slap.connect(lp).connect(sg).connect(this.getLoudDestination(ctx));
     slap.start(now);
     slap.stop(now + 0.2 + 0.05 * scale);
 
@@ -1022,7 +1125,7 @@ export class TacticalAudio {
       bp.Q.setValueAtTime(1.8, now);
       cg.gain.setValueAtTime(0.18, now);
       cg.gain.exponentialRampToValueAtTime(0.001, now + 0.21);
-      crack.connect(bp).connect(cg).connect(ctx.destination);
+      crack.connect(bp).connect(cg).connect(this.getLoudDestination(ctx));
       crack.start(now);
       crack.stop(now + 0.22);
     }
@@ -1084,12 +1187,13 @@ export class TacticalAudio {
     gain.gain.setValueAtTime(vol, now);
 
     // Subtle alternating left/right boot stereo imaging
+    const subtleDest = this.getSubtleDestination(ctx);
     const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
     if (panNode) {
       panNode.pan.setValueAtTime(this.footParity * (heavy ? 0.04 : 0.11), now);
-      src.connect(filter).connect(gain).connect(panNode).connect(ctx.destination);
+      src.connect(filter).connect(gain).connect(panNode).connect(subtleDest);
     } else {
-      src.connect(filter).connect(gain).connect(ctx.destination);
+      src.connect(filter).connect(gain).connect(subtleDest);
     }
 
     // Subtle architectural slapback echo indoors or on hard reflective concrete/metal/glass surfaces
@@ -1101,9 +1205,48 @@ export class TacticalAudio {
       echoLp.frequency.setValueAtTime(indoor ? 1350 : 1800, now);
       const echoGain = ctx.createGain();
       echoGain.gain.setValueAtTime(indoor ? 0.22 : 0.11, now);
-      gain.connect(delay).connect(echoLp).connect(echoGain).connect(ctx.destination);
+      gain.connect(delay).connect(echoLp).connect(echoGain).connect(subtleDest);
     }
 
+    src.start(now);
+  }
+
+  public playEnemyFootstep(
+    surface: FootstepSurface,
+    distance: number,
+    relativeRightDot: number,
+    heavy = false,
+  ) {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.footstepBanks) return;
+
+    const mix = computeEnemyFootstepMix(distance, relativeRightDot, heavy, this.dynamicRange);
+    if (!mix.audible) return;
+
+    const bank = this.footstepBanks[surface] || this.footstepBanks.dirt;
+    const idx = Math.floor(Math.random() * bank.length);
+    const now = ctx.currentTime;
+
+    const src = ctx.createBufferSource();
+    src.buffer = bank[idx];
+    const baseRate = heavy ? 0.8 : 0.96;
+    src.playbackRate.setValueAtTime(baseRate + (Math.random() - 0.5) * 0.12, now);
+
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(mix.cutoffHz, now);
+
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(mix.gain, now);
+
+    const subtleDest = this.getSubtleDestination(ctx);
+    const panNode = typeof ctx.createStereoPanner === 'function' ? ctx.createStereoPanner() : null;
+    if (panNode) {
+      panNode.pan.setValueAtTime(mix.pan, now);
+      src.connect(lp).connect(gain).connect(panNode).connect(subtleDest);
+    } else {
+      src.connect(lp).connect(gain).connect(subtleDest);
+    }
     src.start(now);
   }
 
@@ -1131,7 +1274,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(220, now + 0.09);
     g.gain.setValueAtTime(0.09, now);
     g.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
-    osc.connect(g).connect(ctx.destination);
+    osc.connect(g).connect(this.getSubtleDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.11);
   }
@@ -1153,7 +1296,7 @@ export class TacticalAudio {
     ng.gain.setValueAtTime(0.01, now);
     ng.gain.linearRampToValueAtTime(0.24, now + 0.03);
     ng.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
-    noise.connect(bp).connect(ng).connect(ctx.destination);
+    noise.connect(bp).connect(ng).connect(this.getLoudDestination(ctx));
     noise.start(now);
     noise.stop(now + 0.26);
 
@@ -1164,7 +1307,7 @@ export class TacticalAudio {
     osc.frequency.exponentialRampToValueAtTime(64, now + 0.18);
     og.gain.setValueAtTime(0.2, now);
     og.gain.exponentialRampToValueAtTime(0.001, now + 0.19);
-    osc.connect(og).connect(ctx.destination);
+    osc.connect(og).connect(this.getLoudDestination(ctx));
     osc.start(now);
     osc.stop(now + 0.2);
   }
@@ -1173,6 +1316,7 @@ export class TacticalAudio {
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
+    const dest = this.getSubtleDestination(ctx);
     [523.25, 659.25, 783.99].forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
@@ -1180,7 +1324,7 @@ export class TacticalAudio {
       osc.frequency.setValueAtTime(freq, now + idx * 0.055);
       g.gain.setValueAtTime(0.11, now + idx * 0.055);
       g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.055 + 0.14);
-      osc.connect(g).connect(ctx.destination);
+      osc.connect(g).connect(dest);
       osc.start(now + idx * 0.055);
       osc.stop(now + idx * 0.055 + 0.15);
     });
@@ -1190,6 +1334,7 @@ export class TacticalAudio {
     const ctx = this.ensureContext();
     if (!ctx) return;
     const now = ctx.currentTime;
+    const dest = this.compressor ?? ctx.destination;
     [392.0, 493.88, 587.33, 783.99].forEach((freq, idx) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
@@ -1197,7 +1342,7 @@ export class TacticalAudio {
       osc.frequency.setValueAtTime(freq, now + idx * 0.08);
       g.gain.setValueAtTime(0.12, now + idx * 0.08);
       g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.35);
-      osc.connect(g).connect(ctx.destination);
+      osc.connect(g).connect(dest);
       osc.start(now + idx * 0.08);
       osc.stop(now + idx * 0.08 + 0.36);
     });
@@ -1225,6 +1370,27 @@ export class TacticalAudio {
     this.listener = null;
     this.listenerCamera = null;
     this.ambientStarted = false;
+
+    for (const node of [
+      this.loudBus,
+      this.subtleBus,
+      this.subtlePresenceFilter,
+      this.compressor,
+      this.makeupGain,
+      this.masterGain,
+    ]) {
+      try {
+        node?.disconnect();
+      } catch {
+        // Ignore already-disconnected nodes
+      }
+    }
+    this.loudBus = null;
+    this.subtleBus = null;
+    this.subtlePresenceFilter = null;
+    this.compressor = null;
+    this.makeupGain = null;
+    this.masterGain = null;
 
     // Do not close Three.js global singleton AudioContext if shared; just release references
     this.ctx = null;

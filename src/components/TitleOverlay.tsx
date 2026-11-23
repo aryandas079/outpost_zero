@@ -33,6 +33,11 @@ import {
   SIDEARMS,
 } from '../game/loadout';
 import {
+  AUDIO_DYNAMIC_RANGE_ORDER,
+  AUDIO_DYNAMIC_RANGE_PRESETS,
+  getAudioDynamicRangeSpec,
+} from '../game/audioCompression';
+import {
   DEFAULT_MULTIPLAYER_SETTINGS,
   DEFAULT_PLAYER_CALLSIGNS,
   MultiplayerGameSettings,
@@ -194,6 +199,24 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
     });
   };
 
+  useEffect(() => {
+    if (activeSection !== 'solo') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || tag === 'BUTTON') return;
+      if (e.code === 'Enter' || e.code === 'Space') {
+        e.preventDefault();
+        onStartMission({
+          difficulty,
+          mapId,
+          loadout,
+        });
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [activeSection, difficulty, mapId, loadout, onStartMission]);
+
   const playerColorSpec = PLAYER_COLORS[color] ?? PLAYER_COLORS.cyan;
 
   return (
@@ -201,7 +224,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
       {/* =====================================================================
           SIMPLE TOP NAVIGATION HEADER
           ===================================================================== */}
-      <header className="shrink-0 h-14 border-b border-white/10 bg-[#0d1420]/95 backdrop-blur-md px-4 sm:px-6 flex items-center justify-between gap-4 z-30">
+      <header className="shrink-0 h-14 border-b border-white/10 bg-[#0d1420] px-4 sm:px-6 flex items-center justify-between gap-4 z-30">
         <div className="flex items-center gap-2">
           <div className="w-7 h-7 rounded bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-400 font-display font-black text-sm">
             Ø
@@ -380,6 +403,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
             {/* Deploy Action */}
             <button
               type="button"
+              data-start="true"
               onClick={handleDeploySolo}
               className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-base tracking-wider uppercase rounded-lg shadow-[0_4px_20px_rgba(245,158,11,0.35)] transition-all cursor-pointer flex items-center justify-center gap-2"
             >
@@ -887,6 +911,52 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
                     {!settings.muted ? 'Enabled' : 'Muted'}
                   </button>
                 </div>
+
+                {(() => {
+                  const activeDrc = getAudioDynamicRangeSpec(settings.audioDynamicRange);
+                  const footstepPct = Math.round((activeDrc.subtleCueGain - 1) * 100);
+                  return (
+                    <div className="p-3 bg-[#141d2b] border border-white/10 rounded-lg space-y-2.5 text-xs">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-slate-300 font-medium">Dynamic Range Compression</span>
+                        <span className="font-mono text-[11px] text-cyan-300 font-bold uppercase">
+                          {activeDrc.label}
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Dynamic Range Compression">
+                        {AUDIO_DYNAMIC_RANGE_ORDER.map((presetId) => {
+                          const spec = AUDIO_DYNAMIC_RANGE_PRESETS[presetId];
+                          const active = activeDrc.id === presetId;
+                          return (
+                            <button
+                              key={presetId}
+                              type="button"
+                              role="radio"
+                              aria-checked={active}
+                              onClick={() => onSettingsChange({ audioDynamicRange: presetId })}
+                              className={`py-1.5 px-2 rounded-md font-mono text-[11px] font-bold transition-all cursor-pointer ${
+                                active
+                                  ? 'bg-amber-400 text-slate-950 shadow'
+                                  : 'bg-[#0d131d] text-slate-400 hover:text-white border border-white/10'
+                              }`}
+                            >
+                              {spec.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-[11px] text-slate-400 leading-relaxed">
+                        {activeDrc.description}
+                      </p>
+                      <div className="flex items-center justify-between pt-1 border-t border-white/8 text-[10px] font-mono text-slate-400">
+                        <span>Threshold {activeDrc.thresholdDb} dB · {activeDrc.ratio}:1</span>
+                        <span className="text-emerald-300">
+                          Footsteps {footstepPct > 0 ? `+${footstepPct}%` : 'Natural'}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             )}
 

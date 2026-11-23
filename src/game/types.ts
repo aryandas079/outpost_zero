@@ -1,4 +1,5 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
+export type PlayerMovementState = 'idle' | 'crouching' | 'walking' | 'sprinting' | 'sliding' | 'airborne' | 'dashing';
 
 export type WeaponId = 'carbine' | 'railpistol' | 'shotgun' | 'smg' | 'machinegun' | 'marksman' | 'usp' | 'deagle' | 'glock' | 'rpg' | 'grenadelauncher';
 export type GrenadeId = 'frag' | 'smoke' | 'molotov' | 'flashbang';
@@ -287,6 +288,11 @@ export interface HudSnapshot {
   breathSteady: boolean;
   crouching: boolean;
   sprinting: boolean;
+  grounded: boolean;
+  sliding: boolean;
+  movementState: PlayerMovementState;
+  moveSpeedRatio: number; // 0..1 normalized horizontal movement speed
+  recoilIntensity: number; // 0..1 combined dynamic spread & recoil kick intensity
   matchTimeSec: number;
   headingDeg: number; // 0..359 compass heading
   killFeed: KillFeedEntry[];
@@ -349,6 +355,7 @@ export type KeyBindings = Record<ControlAction, string>;
 export interface GameSettings {
   sensitivity: number; // 0.3 .. 2.2
   muted: boolean;
+  audioDynamicRange: 'wide' | 'balanced' | 'boost';
   graphicsPreset: 'quality' | 'balanced' | 'performance' | 'custom';
   resolutionScale: number; // 0.5 .. 1.0 of native display resolution
   targetFps: 60 | 90 | 100 | 120 | 144;

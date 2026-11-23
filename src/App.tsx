@@ -57,10 +57,15 @@ const INITIAL_HUD: HudSnapshot = {
   breathSteady: false,
   crouching: false,
   sprinting: false,
+  grounded: true,
+  sliding: false,
+  movementState: 'idle',
+  moveSpeedRatio: 0,
+  recoilIntensity: 0,
   matchTimeSec: 0,
   headingDeg: 90,
   killFeed: [],
-  crosshairSpread: 10,
+  crosshairSpread: 10.8,
   pointerLocked: false,
   hitMarker: { active: false, crit: false, kill: false, seq: 0, intensity: 0 },
   damageArc: { active: false, angleRad: 0, intensity: 0 },
@@ -195,6 +200,12 @@ export default function App() {
     return () => window.removeEventListener('pointerdown', tryLock);
   }, [isMobile]);
 
+  // Sync active game phase to document.body.dataset.state for external inspection & E2E verification
+  useEffect(() => {
+    document.body.dataset.state = hud.phase === 'victory' ? 'gameover' : hud.phase;
+    document.body.dataset.phase = hud.phase;
+  }, [hud.phase]);
+
   // Mount Three.js engine once in an isolated DOM container so React HUD updates never tear down WebGL
   useEffect(() => {
     const mount = canvasMountRef.current;
@@ -207,6 +218,28 @@ export default function App() {
     );
     engineRef.current = engine;
     engine.updateSettings(settings);
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('autostart') === '1') {
+      const weaponParam = params.get('weapon') as WeaponId | null;
+      const validWeapon = weaponParam && weaponParam in WEAPON_SPECS ? weaponParam : undefined;
+      const autoLoadout: Loadout = validWeapon
+        ? {
+            ...DEFAULT_LOADOUT,
+            primary: [
+              validWeapon,
+              DEFAULT_LOADOUT.primary[0] === validWeapon
+                ? DEFAULT_LOADOUT.primary[1]
+                : DEFAULT_LOADOUT.primary[0],
+            ],
+          }
+        : DEFAULT_LOADOUT;
+      engine.startMission({
+        difficulty: 'normal',
+        mapId: 'west',
+        loadout: autoLoadout,
+      });
+    }
 
     return () => {
       engine.dispose();

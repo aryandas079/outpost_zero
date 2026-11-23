@@ -9,6 +9,11 @@ import {
   Keyboard,
 } from 'lucide-react';
 import { DIFFICULTY_SPECS, GameSettings, HudSnapshot, MAP_SPECS } from '../game/types';
+import {
+  AUDIO_DYNAMIC_RANGE_ORDER,
+  AUDIO_DYNAMIC_RANGE_PRESETS,
+  getAudioDynamicRangeSpec,
+} from '../game/audioCompression';
 
 interface ModalOverlayProps {
   hud: HudSnapshot;
@@ -43,7 +48,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   const [showControls, setShowControls] = useState(false);
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/75 backdrop-blur-xs px-4 py-3 select-none overflow-y-auto">
+    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/80 px-4 py-3 select-none overflow-y-auto">
       <div className="w-full max-w-md max-h-[96dvh] overflow-y-auto bg-[#0f1622]/98 border border-white/14 rounded-xl p-4 sm:p-6 shadow-2xl space-y-4">
         {/* Header Breadcrumb & Title */}
         <div className="border-b border-white/10 pb-3">
@@ -190,6 +195,44 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
                 </button>
               </div>
 
+              {/* Row 2B: Dynamic Range Compression (Wide / Balanced / Footstep Boost) */}
+              {(() => {
+                const activeDrc = getAudioDynamicRangeSpec(settings.audioDynamicRange);
+                return (
+                  <div className="pt-2 border-t border-white/8">
+                    <div className="flex items-center justify-between mb-1.5 font-mono text-[11px]">
+                      <span className="text-slate-300 font-medium">Dynamic Range</span>
+                      <span className="text-emerald-300 font-bold uppercase">{activeDrc.label}</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Dynamic Range Compression">
+                      {AUDIO_DYNAMIC_RANGE_ORDER.map((presetId) => {
+                        const spec = AUDIO_DYNAMIC_RANGE_PRESETS[presetId];
+                        const active = activeDrc.id === presetId;
+                        return (
+                          <button
+                            key={presetId}
+                            type="button"
+                            role="radio"
+                            aria-checked={active}
+                            onClick={() => onSettingsChange({ audioDynamicRange: presetId })}
+                            className={`py-1.5 px-2 rounded-md font-mono text-xs font-bold transition-all cursor-pointer ${
+                              active
+                                ? 'bg-amber-400 text-slate-950 shadow'
+                                : 'bg-[#0d131d] text-slate-400 hover:text-white border border-white/10'
+                            }`}
+                          >
+                            {spec.shortLabel}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <p className="mt-1.5 text-[10px] text-slate-400 leading-snug">
+                      {activeDrc.description}
+                    </p>
+                  </div>
+                );
+              })()}
+
               {/* Row 3: Simple Graphics Preset (Performance / Balanced / Quality) */}
               <div className="pt-2 border-t border-white/8">
                 <div className="flex items-center justify-between mb-1.5 font-mono text-[11px]">
@@ -267,6 +310,7 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
+                data-start="true"
                 onClick={onRestart}
                 className="py-2.5 px-3 bg-[#141d2b] hover:bg-[#1c293d] border border-white/12 text-slate-200 hover:text-white text-xs font-mono rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
               >

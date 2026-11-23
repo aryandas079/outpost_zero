@@ -1,6 +1,6 @@
 # Outpost Zero
 
-A browser-based 3D tactical first-person shooter and combat simulator built with Three.js, React, and Tailwind CSS. The game features real-time procedural weapon systems, wave-based tactical combat, serverless peer-to-peer multiplayer, synthesized audio, and high-framerate rendering optimizations.
+A browser-based 3D tactical first-person shooter and combat simulator built with Three.js, React, and Tailwind CSS. The game features real-time procedural weapon systems, wave-based tactical combat, serverless peer-to-peer multiplayer, synthesized audio with dynamic range compression, responsive desktop and mobile controls, and high-framerate rendering optimizations.
 
 Live Demo: https://aryandas079.github.io/outpost_zero/
 
@@ -14,7 +14,9 @@ Key highlights include:
 - Single-player wave survival against adaptive AI combat droids.
 - Serverless peer-to-peer multiplayer (Co-op and Deathmatch PvP) using WebRTC and STUN signaling.
 - Procedural weapons and gear customization including the M4A1 Carbine, M249 LMG, Glock 17, and RPG-7.
-- Fully procedural audio synthesis via Web Audio API (gunshots, shell drops, footsteps, reload mechanics).
+- Fully procedural audio synthesis via Web Audio API with customizable dynamic range compression presets (Wide, Balanced, Footstep Boost).
+- Dynamic reticle crosshair system with weapon-specific spreading, crouching stabilization, and kick animation.
+- Advanced collision physics with anti-tunneling wall resolution and camera occlusion avoidance.
 - Dynamic rendering engine with multi-draw batching, static geometry merging, and target framerate presets (60, 120, 144, 200+ FPS).
 
 ---
@@ -70,7 +72,7 @@ Outpost Zero uses PeerJS and WebRTC data channels for low-latency peer-to-peer n
 - Engine and Graphics: Three.js, WebGL
 - Frontend UI: React 19, Tailwind CSS, Lucide Icons, Motion
 - Networking: PeerJS, WebRTC (DataChannels)
-- Audio: Web Audio API (Synthesized procedural sound)
+- Audio: Web Audio API (Synthesized procedural sound, dynamic range compressor)
 - Build System: Vite
 - Desktop Runtime: Electron, Electron Builder
 - CI/CD: GitHub Actions (Automated testing and GitHub Pages deployment)
@@ -96,7 +98,7 @@ npm ci
 
 ### Running Tests
 
-Execute the automated test suite (loadout, multiplayer, and rendering tests):
+Execute the automated test suite (38 unit tests covering rendering, multiplayer, loadout, audio compression, dynamic crosshairs, and physics):
 
 ```bash
 npm test

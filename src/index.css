@@ -31,9 +31,11 @@
 .tac-bearing i { width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid white; margin-bottom:2px; }
 .tac-radar { position:absolute; top:6px; right:14px; display:flex; gap:13px; align-items:flex-start; }
 .tac-utilities { padding-top:10px; display:flex; flex-direction:column; gap:7px; }
-.tac-utilities button { width:29px; height:29px; display:grid; place-items:center; background:#1b242bc9; border:1px solid #b2bbc222; border-radius:4px; color:#f1f2ef; }
-.tac-utilities svg { width:16px; height:16px; }.tac-utilities button:last-child { opacity:0; transition:opacity .15s; }.tac-utilities:hover button:last-child,.tac-utilities:focus-within button:last-child { opacity:1; }
-.tac-panel { background:linear-gradient(115deg,#202424c4,#171b1db8); border:1px solid #c7cecf75; box-shadow:0 1px 5px #0003; }
+.tac-utilities button { width:29px; height:29px; display:grid; place-items:center; background:#1b242bc9; border:1px solid #b2bbc222; border-radius:4px; color:#f1f2ef; transition:background-color .15s,border-color .15s; }
+.tac-utilities button:hover { background:#27343ed9; border-color:#57d7ee66; }
+.tac-utilities svg { width:16px; height:16px; }
+.tac-panel { position:relative; overflow:hidden; background:linear-gradient(115deg,#202424c4,#171b1db8); border:1px solid #c7cecf75; box-shadow:0 1px 5px #0003; animation:tac-panel-flicker 7.5s linear infinite; will-change:opacity,transform,filter; }
+.tac-panel::after { content:''; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,rgba(87,215,238,0.09) 0px,rgba(87,215,238,0.09) 1px,transparent 1px,transparent 3px),linear-gradient(180deg,transparent 0%,rgba(87,215,238,0.22) 48%,transparent 100%); opacity:0; transform:translate3d(0,-100%,0); animation:tac-panel-scanline 7.5s linear infinite; }
 .tac-vitals-equipment { position:absolute; bottom:27px; left:30px; display:flex; gap:24px; align-items:center; }
 .tac-vitals { width:201px; padding:7px 12px 7px 10px; clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); }
 .tac-vitals>div { display:flex; align-items:center; gap:8px; height:23px; }
@@ -41,13 +43,16 @@
 .tac-vitals strong { width:32px; font-size:18px; line-height:20px; font-weight:500; font-variant-numeric:tabular-nums; }
 .tac-vitals i { width:104px; height:5px; background:#c5c7c629; transform:skewX(-20deg); }
 .tac-vitals b { display:block; height:100%; background:#f0f1ee; transition:width .15s; }.tac-vitals>div:first-child b { background:var(--hud-cyan); }
+.tac-vitals.is-critical { animation-duration:4.2s; }
+.tac-vitals.is-critical::after { animation-duration:4.2s; background:repeating-linear-gradient(0deg,rgba(237,101,92,0.12) 0px,rgba(237,101,92,0.12) 1px,transparent 1px,transparent 3px),linear-gradient(180deg,transparent 0%,rgba(237,101,92,0.26) 48%,transparent 100%); }
 .tac-vitals.is-critical>div:last-child { color:#fa7770; }.tac-vitals.is-critical>div:last-child b { background:#ed655c; }
 .tac-equipment { display:flex; gap:10px; padding-left:8px; border-left:1px solid #e0e3e05c; }
 .tac-equipment button { position:relative; width:43px; height:40px; display:flex; justify-content:center; align-items:center; border:1px solid #d6dcdd73; border-radius:3px; background:#1e2425a3; transform:skewX(-13deg); }
 .tac-equipment button>svg { width:22px; height:25px; transform:skewX(13deg); }.tac-equipment button:hover { background:#3a4c51c9; }
 .tac-equipment kbd { position:absolute; bottom:-15px; left:15px; background:#d3d6d4bd; color:#343738; font-size:10px; line-height:12px; border-radius:2px; min-width:11px; text-align:center; transform:skewX(13deg); text-shadow:none; }
 .tac-equipment small { position:absolute; top:1px; right:3px; font-size:9px; }.tac-dash-bars { position:absolute; display:flex; gap:3px; bottom:3px; }.tac-dash-bars i { width:6px; height:4px; background:var(--hud-gold); }
-.tac-weapon { position:absolute; bottom:27px; right:25px; width:263px; padding:4px 11px 7px 31px; clip-path:polygon(31px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%); }
+.tac-weapon { position:absolute; bottom:27px; right:25px; width:263px; padding:4px 11px 7px 31px; clip-path:polygon(31px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%); animation-delay:-2.9s; }
+.tac-weapon::after { animation-delay:-2.9s; }
 .tac-weapon::before { content:''; position:absolute; left:14px; top:-5px; height:90px; width:2px; background:var(--hud-cyan); transform:rotate(25deg); }
 .tac-weapon-header { display:flex; align-items:center; gap:7px; padding-bottom:3px; border-bottom:1px solid #b3b9b446; line-height:17px; white-space:nowrap; }
 .tac-weapon-header>span { font-size:13px; flex:1; }.tac-weapon-header>i { color:#a0a6a282; font-weight:bold; font-size:21px; line-height:16px; letter-spacing:-4px; margin-right:12px; }
@@ -146,10 +151,76 @@
   animation: phone-rotate-hint 2.4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
+@keyframes tac-panel-flicker {
+  0%, 45.5%, 47.2%, 90.8%, 95.8%, 100% {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+    filter: brightness(1);
+  }
+  46.1% {
+    opacity: 0.93;
+    transform: translate3d(0.5px, 0, 0);
+    filter: brightness(1.06);
+  }
+  46.6% {
+    opacity: 0.98;
+    transform: translate3d(-0.5px, 0, 0);
+    filter: brightness(1);
+  }
+  91.4% {
+    opacity: 0.87;
+    transform: translate3d(-1px, 0, 0);
+    filter: brightness(1.1) drop-shadow(0 0 3px rgba(87, 215, 238, 0.25));
+  }
+  92.2% {
+    opacity: 0.99;
+    transform: translate3d(1px, 0, 0);
+    filter: brightness(1.03);
+  }
+  93.1% {
+    opacity: 0.83;
+    transform: translate3d(-0.75px, 0.4px, 0);
+    filter: brightness(1.14) drop-shadow(0 0 4px rgba(87, 215, 238, 0.3));
+  }
+  94.1% {
+    opacity: 0.97;
+    transform: translate3d(0.5px, 0, 0);
+    filter: brightness(1.04);
+  }
+  94.9% {
+    opacity: 0.91;
+    transform: translate3d(0, 0, 0);
+    filter: brightness(1.08);
+  }
+}
+
+@keyframes tac-panel-scanline {
+  0%, 90.5%, 96.2%, 100% {
+    opacity: 0;
+    transform: translate3d(0, -100%, 0);
+  }
+  91.4% {
+    opacity: 0.22;
+    transform: translate3d(0, -35%, 0);
+  }
+  93.3% {
+    opacity: 0.34;
+    transform: translate3d(0, 15%, 0);
+  }
+  95.4% {
+    opacity: 0.14;
+    transform: translate3d(0, 100%, 0);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   * {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
+  }
+  .tac-panel,
+  .tac-panel::after {
+    animation: none !important;
   }
 }
 

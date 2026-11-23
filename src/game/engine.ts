@@ -11,6 +11,7 @@ import { FootstepSurface, TacticalAudio } from './audio';
 import { EnemyEntity, EnemyFactory, EnemyKind } from './enemies';
 import { OcclusionCullingSystem } from './occlusion';
 import { DynamicCapsuleBody, PhysicsRaycastHit, PhysicsWorld } from './physics';
+import { computeDynamicCrosshair, computeRecoilIntensity, resolveMovementState } from './crosshair';
 import { createProceduralTextures, ProceduralTextures } from './textures';
 import {
   DIFFICULTY_SPECS,
@@ -425,6 +426,11 @@ export class OutpostGameEngine {
   private readonly gpuName: string;
   private readonly scene: THREE.Scene;
   private readonly camera: THREE.PerspectiveCamera;
+  private readonly weaponScene: THREE.Scene;
+  private readonly weaponCamera: THREE.PerspectiveCamera;
+  private readonly weaponHemiLight: THREE.HemisphereLight;
+  private readonly weaponSunLight: THREE.DirectionalLight;
+  private readonly weaponRimLight: THREE.DirectionalLight;
   private readonly envTarget: THREE.WebGLRenderTarget;
   private readonly textures: ProceduralTextures;
   private readonly arena: ArenaData;
@@ -517,7 +523,7 @@ export class OutpostGameEngine {
   // Player state (starts on Main Street looking straight down the heart of WEST)
   private readonly playerPos = new THREE.Vector3(-15, 0, 1.4);
   private readonly playerVel = new THREE.Vector3();
-  private readonly playerRadius = 0.46;
+  private readonly playerRadius = 0.56;
   private readonly standEyeHeight = 1.68;
   private readonly crouchEyeHeight = 1.12;
   private readonly playerBody: DynamicCapsuleBody;
@@ -665,6 +671,7 @@ export class OutpostGameEngine {
     this.onHudUpdate = onHudUpdate;
     this.onContextLost = onContextLost;
     this.audio = new TacticalAudio();
+    this.audio.setDynamicRange(this.settings.audioDynamicRange);
 
     try {
       const saved = window.localStorage.getItem(BEST_SCORE_KEY);
@@ -734,10 +741,26 @@ export class OutpostGameEngine {
     this.scene.environmentIntensity = 0.42;
     pmrem.dispose();
 
-    // Camera (raised near plane & tightened far plane boost 24-bit depth precision ~42% to eliminate Z-fighting)
-    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.085, 340);
+    // Camera (0.06m near plane prevents wall near-plane slicing while preserving crisp 24-bit depth precision)
+    this.camera = new THREE.PerspectiveCamera(75, width / height, 0.06, 340);
     this.scene.add(this.camera);
     this.audio.attachSpatialAmbient(this.scene, this.camera);
+
+    // Dedicated depth-cleared viewmodel overlay scene & camera so first-person weapons NEVER clip through walls
+    this.weaponScene = new THREE.Scene();
+    this.weaponScene.environment = this.envTarget.texture;
+    this.weaponScene.environmentIntensity = 0.42;
+    this.weaponCamera = new THREE.PerspectiveCamera(75, width / height, 0.02, 12);
+    this.weaponScene.add(this.weaponCamera);
+    this.weaponHemiLight = new THREE.HemisphereLight(0x74a8dc, 0x6b4a2b, 0.48);
+    this.weaponHemiLight.position.set(0, 70, 0);
+    this.weaponScene.add(this.weaponHemiLight);
+    this.weaponSunLight = new THREE.DirectionalLight(0xffdba2, 1.38);
+    this.weaponSunLight.position.set(68, 34, 42);
+    this.weaponScene.add(this.weaponSunLight);
+    this.weaponRimLight = new THREE.DirectionalLight(0x6c9fd4, 0.22);
+    this.weaponRimLight.position.set(-48, 22, -40);
+    this.weaponScene.add(this.weaponRimLight);
 
     // Cinematic Western Golden-Hour Raking Sun + Sky/Sand Bounce Fill + Cool Sky Rim
     this.hemiLight = new THREE.HemisphereLight(0x74a8dc, 0x6b4a2b, 0.48);
@@ -817,7 +840,7 @@ export class OutpostGameEngine {
     this.scene.add(this.sunCoronaSprite);
 
     this.weaponRig = new FirstPersonWeaponRig(this.textures);
-    this.camera.add(this.weaponRig.root);
+    this.weaponCamera.add(this.weaponRig.root);
     this.weaponRig.root.visible = false;
 
     this.enemyFactory = new EnemyFactory(this.textures);
@@ -826,17 +849,25 @@ export class OutpostGameEngine {
     this.particleMesh = this.initPools();
     this.initAmbientDesertDust();
 
-    // Damage feedback is drawn by the HUD; the world stays on a single render pass.
+    // Damage feedback is drawn by the HUD; world & viewmodel use clean depth-isolated passes.
     this.applyWeatherBlend(WEATHER_PRESETS.sunny, WEATHER_PRESETS.sunny, 0);
     this.cachedSky.update(this.renderer, 1);
     const enemyWarmup = this.enemyFactory.createWarmupGroup();
     this.scene.add(enemyWarmup);
-    // Include the weapon's muzzle light in the same lighting configuration used
-    // during play; otherwise the first frame recompiles every lit material.
-    this.weaponRig.root.visible = true;
-    this.renderer.compile(this.scene, this.camera);
-    this.weaponRig.root.visible = false;
+    // Warm up both the main world scene and the viewmodel scene shaders before first interactive frame on hardware GPUs.
+    if (!this.isSoftwareGl) {
+      this.weaponRig.root.visible = true;
+      this.renderer.compile(this.scene, this.camera);
+      this.renderer.compile(this.weaponScene, this.weaponCamera);
+      this.weaponRig.root.visible = false;
+    }
     this.scene.remove(enemyWarmup);
+
+    // Position camera down Main Street and render one initial world frame so the WebGL buffer is populated immediately
+    this.camera.position.set(-15, 2.2, 1.4);
+    this.camera.lookAt(12, 1.8, 1.4);
+    this.staticBatches.updateVisibility();
+    this.renderer.render(this.scene, this.camera);
 
     this.bindEvents();
     this.emitHud(true);
@@ -1548,6 +1579,7 @@ export class OutpostGameEngine {
       controls: next.controls ? { ...next.controls } : this.settings.controls,
     };
     this.audio.setMuted(this.settings.muted);
+    this.audio.setDynamicRange(this.settings.audioDynamicRange);
     this.applyGraphicsSettings();
   }
 
@@ -2102,11 +2134,10 @@ export class OutpostGameEngine {
 
   private readonly handleBlur = () => {
     this.clearInputs();
-    if (this.phase === 'playing') this.pauseMission();
   };
 
   private readonly handleVisibilityChange = () => {
-    if (document.hidden) this.handleBlur();
+    if (document.hidden) this.clearInputs();
   };
 
   private readonly handleWebGLContextLost = (e: Event) => {
@@ -2124,6 +2155,8 @@ export class OutpostGameEngine {
     const h = this.container.clientHeight || window.innerHeight;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.weaponCamera.aspect = w / h;
+    this.weaponCamera.updateProjectionMatrix();
     this.renderer.setSize(w, h);
   }
 
@@ -3385,6 +3418,8 @@ export class OutpostGameEngine {
       this.playerPos.y + this.currentEyeHeight + headBobY + this.landingDip + localUp,
       this.playerPos.z + camRightZ * localRight - camFwdZ * localBack,
     );
+    // Keep the camera sphere strictly outside all solid walls, corners, and ceilings so shake/crouch never sees through geometry
+    this.physics.resolveCameraSphere(this.camera.position, 0.28);
     _euler.set(
       this.pitch + shakePitch,
       this.yaw + shakeYaw,
@@ -3429,7 +3464,12 @@ export class OutpostGameEngine {
               : 12;
       this.camera.fov = THREE.MathUtils.damp(this.camera.fov, targetFov, fovLambda, dt);
       this.camera.updateProjectionMatrix();
+      this.weaponCamera.fov = this.camera.fov;
+      this.weaponCamera.updateProjectionMatrix();
     }
+    this.weaponCamera.position.copy(this.camera.position);
+    this.weaponCamera.quaternion.copy(this.camera.quaternion);
+    this.weaponCamera.updateMatrixWorld(true);
 
     // 6. Weapon Firing & Reloading
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
@@ -3757,7 +3797,18 @@ export class OutpostGameEngine {
       // Realistic Articulated Stride, Knee Bend, Upper-Body Aim Lean & Weapon Recoil
       const moveSpeedNow = Math.hypot(vx, vz) * moveFactor;
       const strideAmp = THREE.MathUtils.clamp(moveSpeedNow / 4.2, 0.08, 1.0);
+      const prevStrideHalf = Math.floor(e.stridePhase / Math.PI);
       e.stridePhase += dt * (e.kind === 'wasp' ? 4.2 : 6.8 + strideAmp * 3.0);
+      const nextStrideHalf = Math.floor(e.stridePhase / Math.PI);
+
+      // Spatialized enemy footsteps routed through DRC subtle-cue bus so players hear flanking threats during firefights
+      if (e.kind !== 'wasp' && moveSpeedNow > 0.6 && nextStrideHalf !== prevStrideHalf && dist < 34) {
+        const camRightX = Math.cos(this.yaw);
+        const camRightZ = -Math.sin(this.yaw);
+        const rightDot = ((-dx) * camRightX + (-dz) * camRightZ) / dist;
+        const stepSurface = e.root.position.y > 0.14 ? 'wood' : 'dirt';
+        this.audio.playEnemyFootstep(stepSurface, dist, rightDot, e.kind === 'sentinel');
+      }
 
       if (e.leftLeg && e.rightLeg) {
         const leftSwing = Math.sin(e.stridePhase) * 0.56 * strideAmp;
@@ -4242,6 +4293,16 @@ export class OutpostGameEngine {
     this.renderer.toneMappingExposure = THREE.MathUtils.lerp(a.exposure, b.exposure, t);
     this.scene.environmentIntensity = THREE.MathUtils.lerp(a.envIntensity, b.envIntensity, t);
     this.currentWeatherWind = THREE.MathUtils.lerp(a.windIntensity, b.windIntensity, t);
+
+    // Mirror world weather lighting onto the depth-isolated viewmodel overlay scene
+    this.weaponSunLight.color.copy(this.sunLight.color);
+    this.weaponSunLight.intensity = this.sunLight.intensity;
+    this.weaponHemiLight.color.copy(this.hemiLight.color);
+    this.weaponHemiLight.groundColor.copy(this.hemiLight.groundColor);
+    this.weaponHemiLight.intensity = this.hemiLight.intensity;
+    this.weaponRimLight.color.copy(this.rimLight.color);
+    this.weaponRimLight.intensity = this.rimLight.intensity;
+    this.weaponScene.environmentIntensity = this.scene.environmentIntensity;
   }
 
   private updateDamageNumbers(dt: number) {
@@ -4312,9 +4373,8 @@ export class OutpostGameEngine {
     const now = performance.now();
     const rawDt = (now - this.lastFrameMs) / 1000;
     this.lastFrameMs = now;
-    const foreground = document.visibilityState === 'visible' && document.hasFocus();
-    if (!foreground && this.phase === 'playing') this.pauseMission();
-    if (!this.isSoftwareGl && this.settings.dynamicResolution && this.phase === 'playing' && document.visibilityState === 'visible') {
+    const foreground = document.visibilityState === 'visible';
+    if (!this.isSoftwareGl && this.settings.dynamicResolution && this.phase === 'playing' && foreground) {
       const ratio = this.renderQuality.sample(Math.max(this.renderWorkMs, this.gpuTimer.milliseconds), rawDt * 1000);
       if (ratio !== null) {
         this.renderer.setPixelRatio(ratio);
@@ -4356,10 +4416,23 @@ export class OutpostGameEngine {
     this.gpuTimer.begin();
     this.cachedSky.update(this.renderer, clampedDt);
     this.renderer.render(this.scene, this.camera);
+    if (this.weaponRig.root.visible) {
+      this.weaponCamera.position.copy(this.camera.position);
+      this.weaponCamera.quaternion.copy(this.camera.quaternion);
+      if (this.weaponCamera.fov !== this.camera.fov) {
+        this.weaponCamera.fov = this.camera.fov;
+        this.weaponCamera.updateProjectionMatrix();
+      }
+      this.weaponCamera.updateMatrixWorld(true);
+      this.renderer.autoClear = false;
+      this.renderer.clearDepth();
+      this.renderer.render(this.weaponScene, this.weaponCamera);
+      this.renderer.autoClear = true;
+    }
     this.gpuTimer.end();
 
     this.hudEmitAccum += clampedDt;
-    if (this.hudEmitAccum >= 0.05) {
+    if (this.hudEmitAccum >= 0.033) {
       this.hudEmitAccum = 0;
       this.emitHud(false);
     }
@@ -4378,11 +4451,32 @@ export class OutpostGameEngine {
     const remaining = this.spawnQueue.length + this.countAliveEnemies();
     const horizSpeed = Math.hypot(this.playerVel.x, this.playerVel.z);
     const adsActive = this.isAdsActive();
-    const spreadPx = Math.round(
-      ((adsActive ? 5 : this.crouching ? 7 : 10) +
-        this.dynamicSpread * 420 +
-        (this.grounded ? horizSpeed * 0.55 : 8)),
-    );
+    const slidingNow = this.slideTimer > 0;
+    const dashingNow = this.dashTimer > 0;
+    const moveSpeedRatio = THREE.MathUtils.clamp(horizSpeed / 10.6, 0, 1);
+    const movementState = resolveMovementState({
+      grounded: this.grounded,
+      dashing: dashingNow,
+      sliding: slidingNow,
+      sprinting: this.sprinting,
+      crouching: this.crouching,
+      horizontalSpeed: horizSpeed,
+    });
+    const recoilIntensity = computeRecoilIntensity({
+      dynamicSpread: this.dynamicSpread,
+      gunShakeTrauma: this.gunShakeTrauma,
+      gunKickPitch: this.gunKickPitch,
+    });
+    const crosshairMetrics = computeDynamicCrosshair({
+      weaponId: this.weaponId,
+      movementState,
+      moveSpeedRatio,
+      recoilIntensity,
+      ads: adsActive,
+      scopeAlpha: this.scopeAlpha,
+      reloading: this.reloading,
+    });
+    const spreadPx = crosshairMetrics.gapPx;
     // Compass bearing in degrees (0 = North (-Z), 90 = East (+X), 180 = South (+Z), 270 = West (-X))
     const rawDeg = ((-this.yaw * 180) / Math.PI) % 360;
     const headingDeg = Math.round((rawDeg + 360) % 360) % 360;
@@ -4425,6 +4519,11 @@ export class OutpostGameEngine {
       breathSteady: this.breathSteady,
       crouching: this.crouching,
       sprinting: this.sprinting,
+      grounded: this.grounded,
+      sliding: slidingNow,
+      movementState,
+      moveSpeedRatio,
+      recoilIntensity,
       matchTimeSec: this.matchTimeSec,
       headingDeg,
       killFeed: this.killFeed.map(({ id, killer, victim, weapon, headshot }) => ({

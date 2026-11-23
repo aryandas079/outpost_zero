@@ -3,6 +3,7 @@ build/
 dist/
 dist-electron/
 release/
+.aistudio/
 coverage/
 .DS_Store
 *.log

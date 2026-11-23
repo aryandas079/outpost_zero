@@ -54,6 +54,7 @@ const CONTROL_ACTIONS = Object.keys(DEFAULT_KEY_BINDINGS) as ControlAction[];
 export const DEFAULT_GAME_SETTINGS: GameSettings = {
   sensitivity: 1,
   muted: false,
+  audioDynamicRange: 'balanced',
   ...GRAPHICS_PRESETS.balanced,
   controls: { ...DEFAULT_KEY_BINDINGS },
 };
@@ -62,6 +63,7 @@ export function normalizeGameSettings(value: unknown): GameSettings {
   if (!value || typeof value !== 'object') return { ...DEFAULT_GAME_SETTINGS, controls: { ...DEFAULT_KEY_BINDINGS } };
   const candidate = value as Partial<GameSettings>;
   const presets: GameSettings['graphicsPreset'][] = ['quality', 'balanced', 'performance', 'custom'];
+  const dynamicRanges: GameSettings['audioDynamicRange'][] = ['wide', 'balanced', 'boost'];
   const fpsTargets: GameSettings['targetFps'][] = [60, 90, 100, 120, 144];
   const shadows: GameSettings['shadowQuality'][] = ['off', 'medium', 'high'];
   const filtering: GameSettings['textureFiltering'][] = [2, 4, 8];
@@ -69,6 +71,8 @@ export function normalizeGameSettings(value: unknown): GameSettings {
     sensitivity: typeof candidate.sensitivity === 'number'
       ? Math.min(2.2, Math.max(0.35, candidate.sensitivity)) : DEFAULT_GAME_SETTINGS.sensitivity,
     muted: typeof candidate.muted === 'boolean' ? candidate.muted : DEFAULT_GAME_SETTINGS.muted,
+    audioDynamicRange: dynamicRanges.includes(candidate.audioDynamicRange as GameSettings['audioDynamicRange'])
+      ? candidate.audioDynamicRange as GameSettings['audioDynamicRange'] : DEFAULT_GAME_SETTINGS.audioDynamicRange,
     graphicsPreset: presets.includes(candidate.graphicsPreset as GameSettings['graphicsPreset'])
       ? candidate.graphicsPreset as GameSettings['graphicsPreset'] : DEFAULT_GAME_SETTINGS.graphicsPreset,
     resolutionScale: typeof candidate.resolutionScale === 'number'

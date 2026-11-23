@@ -1,7 +1,7 @@
 import React, { useCallback, useRef, useState } from 'react';
-import { HudSnapshot, WeaponId } from '../game/types';
+import { HudSnapshot, KeyBindings, WeaponId } from '../game/types';
+import { computeDynamicCrosshair } from '../game/crosshair';
 import { TacticalHudPanels } from './TacticalHudPanels';
-import { KeyBindings } from '../game/types';
 
 interface GameHudProps {
   hud: HudSnapshot;
@@ -48,8 +48,6 @@ export const GameHud: React.FC<GameHudProps> = React.memo(({
   onTouchSprintToggle,
   onTouchJump,
 }) => {
-  const spread = hud.crosshairSpread;
-
   // Mobile virtual joystick & look controls
   const joyBaseRef = useRef<HTMLDivElement | null>(null);
   const joyPointerId = useRef<number | null>(null);
@@ -321,14 +319,41 @@ export const GameHud: React.FC<GameHudProps> = React.memo(({
               : hud.hitMarker.kill
                 ? '#ef4444'
                 : '#ff5a36';
-            const tickColor = hitActive ? hitColor : 'rgba(255, 255, 255, 0.9)';
-            const tickSpread = spread + (hitActive ? Math.round(hud.hitMarker.intensity * 4) : 0);
+            const crosshair = computeDynamicCrosshair({
+              weaponId: hud.weaponId,
+              movementState: hud.movementState,
+              moveSpeedRatio: hud.moveSpeedRatio,
+              recoilIntensity: hud.recoilIntensity,
+              ads: hud.ads,
+              scopeAlpha: hud.scopeAlpha,
+              reloading: hud.reloading,
+              hitMarkerActive: hitActive,
+              hitMarkerIntensity: hud.hitMarker.intensity,
+            });
+            const baseTickColor =
+              crosshair.recoilHeat > 0.15
+                ? `rgba(253, ${Math.round(244 - crosshair.recoilHeat * 42)}, ${Math.round(238 - crosshair.recoilHeat * 145)}, 0.94)`
+                : 'rgba(248, 250, 252, 0.94)';
+            const tickColor = hitActive ? hitColor : baseTickColor;
             const hitGlow = hitActive
               ? `0 0 ${hud.hitMarker.crit || hud.hitMarker.kill ? 10 : 7}px ${hitColor}`
-              : '0 0 2px rgba(0, 0, 0, 0.7)';
+              : '0 0 2px rgba(0, 0, 0, 0.85)';
+            const tickTransition = 'transform 75ms cubic-bezier(0.16, 1, 0.3, 1), opacity 110ms ease-out, background-color 75ms ease-out';
+            const gap = crosshair.gapPx;
+            const len = crosshair.tickLengthPx;
+            const thick = crosshair.tickThicknessPx;
+            const reloadArcRadius = 11;
+            const reloadArcCircumference = 2 * Math.PI * reloadArcRadius;
 
             return (
-              <div className="relative w-0 h-0">
+              <div
+                className="relative w-0 h-0"
+                data-testid="dynamic-crosshair"
+                data-movement-state={hud.movementState}
+                data-recoil-intensity={hud.recoilIntensity.toFixed(3)}
+                data-crosshair-gap={gap.toFixed(1)}
+                data-crosshair-style={crosshair.style}
+              >
                 {hitActive && (
                   <span
                     key={`ring-${hud.hitMarker.seq}`}
@@ -337,32 +362,154 @@ export const GameHud: React.FC<GameHudProps> = React.memo(({
                   />
                 )}
 
-                {!hud.ads && (
+                {/* Reload micro-progress arc centered on reticle */}
+                {hud.reloading && !scopedIn && (
+                  <svg
+                    viewBox="0 0 30 30"
+                    className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-7 h-7 pointer-events-none"
+                    style={{ filter: 'drop-shadow(0 0 2px rgba(0,0,0,0.8))' }}
+                  >
+                    <circle
+                      cx="15"
+                      cy="15"
+                      r={reloadArcRadius}
+                      fill="none"
+                      stroke="rgba(255,255,255,0.18)"
+                      strokeWidth="1.8"
+                    />
+                    <circle
+                      cx="15"
+                      cy="15"
+                      r={reloadArcRadius}
+                      fill="none"
+                      stroke="#fbbf24"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeDasharray={reloadArcCircumference}
+                      strokeDashoffset={reloadArcCircumference * (1 - hud.reloadProgress)}
+                      transform="rotate(-90 15 15)"
+                    />
+                  </svg>
+                )}
+
+                {/* Center precision dot (locked to dead-center while outer ticks expand/contract) */}
+                {crosshair.centerDotOpacity > 0.01 && (
+                  <span
+                    data-testid="crosshair-dot"
+                    className="absolute top-0 left-0 rounded-full"
+                    style={{
+                      width: '3.5px',
+                      height: '3.5px',
+                      opacity: crosshair.centerDotOpacity,
+                      transform: `translate3d(-50%, -50%, 0) scale(${crosshair.centerDotScale.toFixed(3)})`,
+                      backgroundColor: hitActive ? hitColor : '#f8fafc',
+                      boxShadow: hitGlow,
+                      transition: tickTransition,
+                    }}
+                  />
+                )}
+
+                {/* Shotgun dynamic spread circle (GPU-composited via transform scale) */}
+                {crosshair.style === 'circle' && crosshair.outerOpacity > 0.01 && (
+                  <span
+                    data-testid="crosshair-circle"
+                    className="absolute top-0 left-0 w-10 h-10 rounded-full border-[1.75px]"
+                    style={{
+                      opacity: crosshair.outerOpacity * 0.72,
+                      borderColor: tickColor,
+                      transform: `translate3d(-50%, -50%, 0) scale(${(crosshair.circleRadiusPx / 20).toFixed(3)})`,
+                      boxShadow: `0 0 2px rgba(0, 0, 0, 0.75), inset 0 0 2px rgba(0, 0, 0, 0.45)`,
+                      transition: tickTransition,
+                    }}
+                  />
+                )}
+
+                {/* Launcher ballistic arc brackets */}
+                {crosshair.style === 'bracket' && crosshair.outerOpacity > 0.01 && (
                   <>
                     <span
-                      className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full transition-colors duration-75"
+                      data-testid="crosshair-bracket-left"
+                      className="absolute top-0 left-0 w-2.5 h-5 border-l-2 border-y-2 rounded-l-xs"
                       style={{
-                        width: hitActive ? '4.5px' : '3.5px',
-                        height: hitActive ? '4.5px' : '3.5px',
-                        backgroundColor: hitActive ? hitColor : '#f8fafc',
-                        boxShadow: hitGlow,
+                        opacity: crosshair.outerOpacity,
+                        borderColor: tickColor,
+                        transform: `translate3d(${-(gap + 10)}px, -50%, 0)`,
+                        filter: 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))',
+                        transition: tickTransition,
                       }}
                     />
                     <span
-                      className="absolute left-1/2 -translate-x-1/2 w-[2px] h-2.5 transition-colors duration-75"
-                      style={{ bottom: `${tickSpread}px`, backgroundColor: tickColor, boxShadow: hitGlow }}
+                      data-testid="crosshair-bracket-right"
+                      className="absolute top-0 left-0 w-2.5 h-5 border-r-2 border-y-2 rounded-r-xs"
+                      style={{
+                        opacity: crosshair.outerOpacity,
+                        borderColor: tickColor,
+                        transform: `translate3d(${gap}px, -50%, 0)`,
+                        filter: 'drop-shadow(0 0 2px rgba(0, 0, 0, 0.85))',
+                        transition: tickTransition,
+                      }}
                     />
+                  </>
+                )}
+
+                {/* Four GPU-composited directional ticks (expand/contract smoothly via translate3d) */}
+                {crosshair.style !== 'bracket' && crosshair.outerOpacity > 0.01 && (
+                  <>
+                    {/* Top tick */}
                     <span
-                      className="absolute left-1/2 -translate-x-1/2 w-[2px] h-2.5 transition-colors duration-75"
-                      style={{ top: `${tickSpread}px`, backgroundColor: tickColor, boxShadow: hitGlow }}
+                      data-testid="crosshair-tick-top"
+                      className="absolute top-0 left-0 rounded-[1px]"
+                      style={{
+                        width: `${thick}px`,
+                        height: `${len}px`,
+                        opacity: crosshair.outerOpacity,
+                        backgroundColor: tickColor,
+                        boxShadow: hitGlow,
+                        transform: `translate3d(-50%, ${-(gap + len)}px, 0)`,
+                        transition: tickTransition,
+                      }}
                     />
+                    {/* Bottom tick */}
                     <span
-                      className="absolute top-1/2 -translate-y-1/2 h-[2px] w-2.5 transition-colors duration-75"
-                      style={{ right: `${tickSpread}px`, backgroundColor: tickColor, boxShadow: hitGlow }}
+                      data-testid="crosshair-tick-bottom"
+                      className="absolute top-0 left-0 rounded-[1px]"
+                      style={{
+                        width: `${thick}px`,
+                        height: `${len}px`,
+                        opacity: crosshair.outerOpacity,
+                        backgroundColor: tickColor,
+                        boxShadow: hitGlow,
+                        transform: `translate3d(-50%, ${gap}px, 0)`,
+                        transition: tickTransition,
+                      }}
                     />
+                    {/* Left tick */}
                     <span
-                      className="absolute top-1/2 -translate-y-1/2 h-[2px] w-2.5 transition-colors duration-75"
-                      style={{ left: `${tickSpread}px`, backgroundColor: tickColor, boxShadow: hitGlow }}
+                      data-testid="crosshair-tick-left"
+                      className="absolute top-0 left-0 rounded-[1px]"
+                      style={{
+                        width: `${len}px`,
+                        height: `${thick}px`,
+                        opacity: crosshair.outerOpacity,
+                        backgroundColor: tickColor,
+                        boxShadow: hitGlow,
+                        transform: `translate3d(${-(gap + len)}px, -50%, 0)`,
+                        transition: tickTransition,
+                      }}
+                    />
+                    {/* Right tick */}
+                    <span
+                      data-testid="crosshair-tick-right"
+                      className="absolute top-0 left-0 rounded-[1px]"
+                      style={{
+                        width: `${len}px`,
+                        height: `${thick}px`,
+                        opacity: crosshair.outerOpacity,
+                        backgroundColor: tickColor,
+                        boxShadow: hitGlow,
+                        transform: `translate3d(${gap}px, -50%, 0)`,
+                        transition: tickTransition,
+                      }}
                     />
                   </>
                 )}
@@ -393,7 +540,7 @@ export const GameHud: React.FC<GameHudProps> = React.memo(({
 
         {/* Center Wave Banner */}
         {hud.waveBanner && !scopedIn && (
-          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-none bg-[#090f18]/85 backdrop-blur-xs px-8 py-2 border-y-2 border-amber-400 text-center rounded shadow-xl">
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 flex flex-col items-center pointer-events-none bg-[#090f18]/92 px-8 py-2 border-y-2 border-amber-400 text-center rounded shadow-xl">
             <p className="font-display font-black text-sm sm:text-base tracking-[0.2em] uppercase text-white whitespace-nowrap drop-shadow">
               {hud.waveBanner}
             </p>
