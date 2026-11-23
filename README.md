@@ -1,98 +1,148 @@
-# Outpost Zero — 3D Tactical First-Person Shooter & Combat Simulator
+# Outpost Zero
 
-A high-performance sunlit brutalist 3D first-person shooter built with Three.js, React, and Tailwind CSS. Features procedural low-poly weapons, tactical wave-based droid combat, peer-to-peer multiplayer, Web Audio API sound synthesis, responsive desktop and mobile controls, and advanced rendering optimizations (multi-draw batching, static geometry merging, and adaptive quality targeting high-refresh rates up to 200 FPS).
+A browser-based 3D tactical first-person shooter and combat simulator built with Three.js, React, and Tailwind CSS. The game features real-time procedural weapon systems, wave-based tactical combat, serverless peer-to-peer multiplayer, synthesized audio, and high-framerate rendering optimizations.
 
-🎮 **Live Demo:** [https://aryandas079.github.io/outpost_zero/](https://aryandas079.github.io/outpost_zero/)
-
----
-
-## 🕹️ Controls
-
-### Desktop (Keyboard & Mouse)
-- **W / A / S / D**: Move (Forward, Strafe Left, Backward, Strafe Right)
-- **Mouse**: Look around (Click game canvas to lock pointer)
-- **Left Mouse Button**: Primary Fire
-- **Right Mouse Button**: Aim Down Sights (ADS)
-- **Spacebar**: Jump
-- **Shift**: Sprint
-- **C**: Slide / Crouch
-- **R**: Reload
-- **G**: Throw Grenade (0.38s hand release presentation)
-- **1 / 2**: Primary Weapons (M4A1 Carbine / M249 LMG)
-- **3 / 4**: Sidearm (Glock 17) & Heavy Ordnance (RPG-7)
-- **Mouse Wheel**: Cycle Weapons
-- **Tab**: Multiplayer Leaderboard & Match Stats
-- **Escape**: Pause Menu / Graphics & Controls Settings / Release Mouse Lock
-
-### Mobile / Touch
-- **Left Virtual Joystick**: Movement
-- **Right Virtual Touchpad**: Look / Aim
-- **On-Screen Buttons**: Fire, ADS, Jump, Reload, Grenade, Weapon Switch
+Live Demo: https://aryandas079.github.io/outpost_zero/
 
 ---
 
-## 🌐 Peer-to-Peer Multiplayer (Up to 4 Players)
+## Overview
 
-Outpost Zero features full peer-to-peer multiplayer using WebRTC with automatic STUN signaling, allowing up to 4 players from anywhere in the world to connect instantly without external server software or port forwarding.
+Outpost Zero delivers an arcade-tactical FPS experience directly in the browser with no downloads or plugins required. It also supports standalone desktop execution via Electron.
 
-### Game Modes:
-- **Co-op Wave Defense (1-4 Players)**: Team up to survive frontier robot waves across the 15 enterable buildings of West Town. Players share the battlefield, revive teammates, coordinate loadouts, and synchronize enemy waves.
-- **Deathmatch PvP Arena (2-4 Players)**: Free-for-all tactical shootout with customizable elimination goals (First to 10, 15, or 25 kills), dynamic respawns, headshot detection, and real-time leaderboard (toggled with `[TAB]`).
-
-### How to Play with Friends:
-1. Click **Multiplayer (1-4 Players)** on the main menu.
-2. Choose your **Call-sign** and **Visor/Armor Color** (Neon Cyan, Solar Amber, Bio Emerald, Pulse Rose).
-3. **Host a Match**: Select your mode, difficulty or score limit, and click **Create Match Lobby**.
-4. Share the generated 6-character **Room Code** (e.g. `OPZ-7K2X`) or click **Share Link** to copy a direct invite link (`?room=OPZ-7K2X`).
-5. **Join a Match**: Other players click **Join Existing Room**, paste the code (or open the shared link), and click **Connect**.
-6. When players ready up, the host clicks **Launch Squad Mission** to begin!
+Key highlights include:
+- Single-player wave survival against adaptive AI combat droids.
+- Serverless peer-to-peer multiplayer (Co-op and Deathmatch PvP) using WebRTC and STUN signaling.
+- Procedural weapons and gear customization including the M4A1 Carbine, M249 LMG, Glock 17, and RPG-7.
+- Fully procedural audio synthesis via Web Audio API (gunshots, shell drops, footsteps, reload mechanics).
+- Dynamic rendering engine with multi-draw batching, static geometry merging, and target framerate presets (60, 120, 144, 200+ FPS).
 
 ---
 
-## 🔫 Weapons & Custom Models
+## Controls
 
-The default loadout includes the **M4A1 carbine**, **M249 LMG**, **Glock 17**, and **RPG-7**. The first-person models feature fitted full-finger tactical gloves, charcoal fabric, metal roughness and normal maps, and separate factory-marking decals.
+### Keyboard and Mouse
 
-### Tactical HUD & Settings
-- Slim tactical compass, circular radar minimap, compact vitals and equipment panels, and angled ammunition readouts.
-- Full graphics settings: resolution scaling, shadow resolution, post-processing toggles, and target framerate presets (60, 120, 144, 200+ FPS).
-- Customizable keybindings and controls remapping.
+- W, A, S, D: Movement (Forward, Strafe Left, Backward, Strafe Right)
+- Mouse: Look and aim (Click the canvas to lock pointer)
+- Left Mouse Button: Primary fire
+- Right Mouse Button: Aim down sights (ADS)
+- Spacebar: Jump
+- Left Shift: Sprint
+- C: Slide / Crouch
+- R: Reload
+- G: Throw grenade
+- 1, 2: Primary weapons (M4A1 Carbine, M249 LMG)
+- 3, 4: Sidearm (Glock 17) and heavy ordnance (RPG-7)
+- Mouse Wheel: Cycle weapons
+- Tab: Multiplayer scoreboard and match stats
+- Escape: Pause menu, settings, or release pointer lock
+
+### Touch Devices
+
+- Left Virtual Joystick: Movement
+- Right Virtual Touchpad: Look and aim
+- On-Screen Action Buttons: Fire, ADS, Jump, Reload, Grenade, Weapon Swap
 
 ---
 
-## 🛠️ Local Development & Desktop App
+## Multiplayer
+
+Outpost Zero uses PeerJS and WebRTC data channels for low-latency peer-to-peer networking. Up to 4 players can connect from anywhere without dedicated game servers or port forwarding.
+
+### Game Modes
+
+- Co-op Wave Survival (1-4 Players): Defend the town against increasingly aggressive robot waves. Coordinate loadouts and revive downed teammates.
+- Deathmatch PvP (2-4 Players): Free-for-all combat with customizable score limits (10, 15, or 25 eliminations), instant respawns, and real-time kill feed.
+
+### How to Join a Match
+
+1. Select "Multiplayer" from the main menu.
+2. Enter your call-sign and choose your visor color theme.
+3. Hosting: Choose game mode and settings, then click "Create Match Lobby". Share the generated 6-character room code or invite URL.
+4. Joining: Select "Join Existing Room", paste the host's room code, and connect.
+5. Once all players are ready, the host starts the mission.
+
+---
+
+## Technology Stack
+
+- Engine and Graphics: Three.js, WebGL
+- Frontend UI: React 19, Tailwind CSS, Lucide Icons, Motion
+- Networking: PeerJS, WebRTC (DataChannels)
+- Audio: Web Audio API (Synthesized procedural sound)
+- Build System: Vite
+- Desktop Runtime: Electron, Electron Builder
+- CI/CD: GitHub Actions (Automated testing and GitHub Pages deployment)
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- Node.js (v18+)
+
+- Node.js (version 18 or later)
 - npm
 
-### Web Development
+### Installation
+
+Clone the repository and install dependencies:
+
 ```bash
-# Clone the repository
 git clone https://github.com/aryandas079/outpost_zero.git
 cd outpost_zero
-
-# Install dependencies
 npm ci
+```
 
-# Run test suite
+### Running Tests
+
+Execute the automated test suite (loadout, multiplayer, and rendering tests):
+
+```bash
 npm test
+```
 
-# Start local dev server
+### Development Server
+
+Start the local development server:
+
+```bash
 npm run dev
 ```
 
-### Desktop Application (Electron)
+Open http://localhost:3000 in your browser to play.
+
+### Production Build
+
+Create an optimized static build:
+
 ```bash
-# Run in Electron dev mode
+npm run build
+npm run preview
+```
+
+The production assets will be output to the `dist` directory.
+
+### Desktop App (Electron)
+
+Run or package the application as a standalone desktop binary:
+
+```bash
+# Run in Electron development mode
 npm run electron:dev
 
-# Package standalone desktop executable
+# Package executable for your platform
 npm run electron:pack
 ```
 
 ---
 
-## 🚢 Deployment
+## Deployment
 
-Automated deployment is configured with GitHub Actions (`.github/workflows/deploy.yml`). Pushes to the `main` branch automatically run the test suite, build the production bundle, and deploy to GitHub Pages.
+Deployments to GitHub Pages are managed via GitHub Actions (.github/workflows/deploy.yml). Any push to the `main` branch automatically runs the test suite, builds the production bundle, and publishes the site to the `gh-pages` branch.
+
+---
+
+## License
+
+This project is licensed under the Apache 2.0 License. See the LICENSE file for details.
