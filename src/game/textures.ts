@@ -66,6 +66,20 @@ export interface ProceduralTextures {
   bulletHoleStone: THREE.CanvasTexture;
   bulletHoleMetal: THREE.CanvasTexture;
 
+  // 10 km² Battle Royale Island — Fine Multi-Frequency Terrain & Ocean PBR Textures
+  islandTerrainColor: THREE.CanvasTexture;
+  islandTerrainNormal: THREE.CanvasTexture;
+  islandTerrainRoughness: THREE.CanvasTexture;
+  oceanWaterColor: THREE.CanvasTexture;
+  oceanWaterNormal: THREE.CanvasTexture;
+
+  // Realistic Foliage & Forest Canopy PBR Textures
+  pineNeedlesColor: THREE.CanvasTexture;
+  pineNeedlesNormal: THREE.CanvasTexture;
+  leafCanopyColor: THREE.CanvasTexture;
+  leafCanopyNormal: THREE.CanvasTexture;
+  grassTuftColor: THREE.CanvasTexture;
+
   createSignTexture: (title: string, subtitle?: string, variant?: 'dark' | 'cream' | 'red') => THREE.CanvasTexture;
   dispose: () => void;
 }
@@ -1953,6 +1967,285 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     return tex;
   };
 
+  // =========================================================================
+  // 5. 10 KM² BATTLE ROYALE ISLAND — HIGH-FIDELITY FIELD TURF & PBR VEGETATION
+  // =========================================================================
+  const fieldRng = createRng(88412);
+  const [itCanvas, itCtx] = makeCanvas(1024, 1024);
+  const [itHCanvas, itHCtx] = makeCanvas(1024, 1024);
+  const [itRCanvas, itRCtx] = makeCanvas(1024, 1024);
+
+  // Layer 0: Bright neutral meadow foundation (avoids darkening snow caps or beach sand when multiplied by vertex biome colors)
+  itCtx.fillStyle = '#bcc6af';
+  itCtx.fillRect(0, 0, 1024, 1024);
+  itHCtx.fillStyle = '#787878';
+  itHCtx.fillRect(0, 0, 1024, 1024);
+  itRCtx.fillStyle = '#e8e8e8';
+  itRCtx.fillRect(0, 0, 1024, 1024);
+
+  // Layer 1: Soil mottling, soft meadow undertones & organic moisture swales
+  for (let i = 0; i < 680; i++) {
+    const cx = fieldRng() * 1024;
+    const cy = fieldRng() * 1024;
+    const rad = 14 + fieldRng() * 42;
+    const kind = fieldRng();
+    const g = itCtx.createRadialGradient(cx, cy, 2, cx, cy, rad);
+    if (kind < 0.38) {
+      g.addColorStop(0, 'rgba(138, 174, 122, 0.38)');
+      g.addColorStop(1, 'rgba(138, 174, 122, 0)');
+    } else if (kind < 0.72) {
+      g.addColorStop(0, 'rgba(218, 210, 168, 0.36)');
+      g.addColorStop(1, 'rgba(218, 210, 168, 0)');
+    } else {
+      g.addColorStop(0, 'rgba(148, 140, 124, 0.30)');
+      g.addColorStop(1, 'rgba(148, 140, 124, 0)');
+    }
+    itCtx.fillStyle = g;
+    itCtx.beginPath();
+    itCtx.arc(cx, cy, rad, 0, Math.PI * 2);
+    itCtx.fill();
+
+    const hVal = kind < 0.72 ? 168 : 88;
+    itHCtx.fillStyle = `rgba(${hVal}, ${hVal}, ${hVal}, 0.3)`;
+    itHCtx.beginPath();
+    itHCtx.arc(cx, cy, rad * 0.75, 0, Math.PI * 2);
+    itHCtx.fill();
+  }
+
+  // Layer 2: 9,000+ Individual interwoven natural grass blades & thatch stalks
+  for (let i = 0; i < 9200; i++) {
+    const gx = fieldRng() * 1024;
+    const gy = fieldRng() * 1024;
+    const bladeLen = 6 + fieldRng() * 14;
+    const bladeAngle = -Math.PI * 0.5 + (fieldRng() - 0.5) * 1.35;
+    const tx = gx + Math.cos(bladeAngle) * bladeLen;
+    const ty = gy + Math.sin(bladeAngle) * bladeLen;
+
+    const shade = fieldRng();
+    if (shade < 0.32) {
+      itCtx.strokeStyle = 'rgba(136, 168, 114, 0.65)';
+    } else if (shade < 0.72) {
+      itCtx.strokeStyle = 'rgba(178, 208, 146, 0.72)';
+    } else if (shade < 0.88) {
+      itCtx.strokeStyle = 'rgba(216, 212, 164, 0.66)';
+    } else {
+      itCtx.strokeStyle = 'rgba(240, 236, 198, 0.60)';
+    }
+    itCtx.lineWidth = 1.0 + fieldRng() * 1.3;
+    itCtx.beginPath();
+    itCtx.moveTo(gx, gy);
+    itCtx.lineTo(tx, ty);
+    itCtx.stroke();
+
+    // Height relief for normal mapping (prominent blade ridge)
+    const bh = shade > 0.35 ? 225 : 120;
+    itHCtx.strokeStyle = `rgba(${bh}, ${bh}, ${bh}, 0.55)`;
+    itHCtx.lineWidth = 1.2;
+    itHCtx.beginPath();
+    itHCtx.moveTo(gx, gy);
+    itHCtx.lineTo(tx, ty);
+    itHCtx.stroke();
+
+    // Waxy specular sheen on sunlit grass blades
+    const br = shade > 0.5 ? 140 : 210;
+    itRCtx.strokeStyle = `rgba(${br}, ${br}, ${br}, 0.48)`;
+    itRCtx.lineWidth = 1.1;
+    itRCtx.beginPath();
+    itRCtx.moveTo(gx, gy);
+    itRCtx.lineTo(tx, ty);
+    itRCtx.stroke();
+  }
+
+  // Layer 3: Wild clover stars, gravel pebbles & earth crumbs
+  for (let i = 0; i < 750; i++) {
+    const px = fieldRng() * 1024;
+    const py = fieldRng() * 1024;
+    const pr = 1.2 + fieldRng() * 2.8;
+    itCtx.fillStyle = fieldRng() > 0.4 ? 'rgba(128, 118, 102, 0.75)' : 'rgba(215, 205, 165, 0.7)';
+    itCtx.beginPath();
+    itCtx.arc(px, py, pr, 0, Math.PI * 2);
+    itCtx.fill();
+
+    itHCtx.fillStyle = 'rgba(245, 245, 245, 0.75)';
+    itHCtx.beginPath();
+    itHCtx.arc(px, py, pr, 0, Math.PI * 2);
+    itHCtx.fill();
+  }
+
+  addSubtleGrain(itCtx, 1024, 1024, 0.05, 2, fieldRng);
+  addSubtleGrain(itHCtx, 1024, 1024, 0.07, 2, fieldRng);
+
+  const islandRepeat = 1;
+  const islandTerrainColor = new THREE.CanvasTexture(itCanvas);
+  islandTerrainColor.colorSpace = THREE.SRGBColorSpace;
+  islandTerrainColor.wrapS = THREE.RepeatWrapping;
+  islandTerrainColor.wrapT = THREE.RepeatWrapping;
+  islandTerrainColor.repeat.set(islandRepeat, islandRepeat);
+  islandTerrainColor.anisotropy = aniso;
+
+  const islandTerrainNormal = heightCanvasToNormalTexture(itHCanvas, 3.4, aniso, islandRepeat, islandRepeat);
+  const islandTerrainRoughness = new THREE.CanvasTexture(itRCanvas);
+  islandTerrainRoughness.wrapS = THREE.RepeatWrapping;
+  islandTerrainRoughness.wrapT = THREE.RepeatWrapping;
+  islandTerrainRoughness.repeat.set(islandRepeat, islandRepeat);
+  islandTerrainRoughness.anisotropy = aniso;
+
+  // 5B. Sunlit Stylized Conifer Needle Texture & Normal Map
+  const [pnCanvas, pnCtx] = makeCanvas(512, 512);
+  const [pnHCanvas, pnHCtx] = makeCanvas(512, 512);
+  pnCtx.fillStyle = '#4c7e3a';
+  pnCtx.fillRect(0, 0, 512, 512);
+  pnHCtx.fillStyle = '#808080';
+  pnHCtx.fillRect(0, 0, 512, 512);
+
+  const pineRng = createRng(44192);
+  for (let i = 0; i < 4800; i++) {
+    const px = pineRng() * 512;
+    const py = pineRng() * 512;
+    const nLen = 8 + pineRng() * 16;
+    const nAng = (pineRng() - 0.5) * 2.8;
+    const tx = px + Math.cos(nAng) * nLen;
+    const ty = py + Math.sin(nAng) * nLen;
+
+    const nColor = pineRng();
+    if (nColor < 0.4) pnCtx.strokeStyle = '#3c6e2c';
+    else if (nColor < 0.75) pnCtx.strokeStyle = '#538e3d';
+    else if (nColor < 0.9) pnCtx.strokeStyle = '#6da64f';
+    else pnCtx.strokeStyle = '#86bf65';
+
+    pnCtx.lineWidth = 1.2 + pineRng() * 0.8;
+    pnCtx.beginPath();
+    pnCtx.moveTo(px, py);
+    pnCtx.lineTo(tx, ty);
+    pnCtx.stroke();
+
+    const nh = nColor > 0.5 ? 210 : 130;
+    pnHCtx.strokeStyle = `rgba(${nh}, ${nh}, ${nh}, 0.6)`;
+    pnHCtx.lineWidth = 1.2;
+    pnHCtx.beginPath();
+    pnHCtx.moveTo(px, py);
+    pnHCtx.lineTo(tx, ty);
+    pnHCtx.stroke();
+  }
+  const pineNeedlesColor = new THREE.CanvasTexture(pnCanvas);
+  pineNeedlesColor.colorSpace = THREE.SRGBColorSpace;
+  pineNeedlesColor.wrapS = THREE.RepeatWrapping;
+  pineNeedlesColor.wrapT = THREE.RepeatWrapping;
+  pineNeedlesColor.repeat.set(4, 4);
+  pineNeedlesColor.anisotropy = aniso;
+
+  const pineNeedlesNormal = heightCanvasToNormalTexture(pnHCanvas, 3.2, aniso, 4, 4);
+
+  // 5C. Stylized Sunny Deciduous Leaf Canopy Texture & Normal Map
+  const [lcCanvas, lcCtx] = makeCanvas(512, 512);
+  const [lcHCanvas, lcHCtx] = makeCanvas(512, 512);
+  lcCtx.fillStyle = '#548f38';
+  lcCtx.fillRect(0, 0, 512, 512);
+  lcHCtx.fillStyle = '#808080';
+  lcHCtx.fillRect(0, 0, 512, 512);
+
+  const leafRng = createRng(77218);
+  for (let i = 0; i < 1400; i++) {
+    const lx = leafRng() * 512;
+    const ly = leafRng() * 512;
+    const lr = 7 + leafRng() * 14;
+    const lShade = leafRng();
+    const lg = lcCtx.createRadialGradient(lx, ly, 2, lx, ly, lr);
+    if (lShade < 0.35) {
+      lg.addColorStop(0, '#6aa944');
+      lg.addColorStop(1, '#477a2e');
+    } else if (lShade < 0.75) {
+      lg.addColorStop(0, '#7fc252');
+      lg.addColorStop(1, '#558e36');
+    } else {
+      lg.addColorStop(0, '#9bd96a');
+      lg.addColorStop(1, '#68a441');
+    }
+    lcCtx.fillStyle = lg;
+    lcCtx.beginPath();
+    lcCtx.arc(lx, ly, lr, 0, Math.PI * 2);
+    lcCtx.fill();
+
+    lcHCtx.fillStyle = `rgba(${170 + Math.floor(lShade * 70)}, ${170 + Math.floor(lShade * 70)}, ${170 + Math.floor(lShade * 70)}, 0.4)`;
+    lcHCtx.beginPath();
+    lcHCtx.arc(lx, ly, lr * 0.8, 0, Math.PI * 2);
+    lcHCtx.fill();
+  }
+  const leafCanopyColor = new THREE.CanvasTexture(lcCanvas);
+  leafCanopyColor.colorSpace = THREE.SRGBColorSpace;
+  leafCanopyColor.wrapS = THREE.RepeatWrapping;
+  leafCanopyColor.wrapT = THREE.RepeatWrapping;
+  leafCanopyColor.repeat.set(3, 3);
+  leafCanopyColor.anisotropy = aniso;
+
+  const leafCanopyNormal = heightCanvasToNormalTexture(lcHCanvas, 2.8, aniso, 3, 3);
+
+  // 5D. 3D Field Grass Tuft Texture with Alpha Masking
+  const [gtCanvas, gtCtx] = makeCanvas(256, 256);
+  gtCtx.clearRect(0, 0, 256, 256);
+  const tuftRng = createRng(66319);
+  for (let i = 0; i < 48; i++) {
+    const bx = 128 + (tuftRng() - 0.5) * 54;
+    const by = 250;
+    const tLen = 140 + tuftRng() * 95;
+    const spread = (tuftRng() - 0.5) * 110;
+    const curve = (tuftRng() - 0.5) * 45;
+
+    const bladeGrad = gtCtx.createLinearGradient(bx, by, bx + spread, by - tLen);
+    bladeGrad.addColorStop(0, '#2d4d24');
+    bladeGrad.addColorStop(0.5, '#4f8a37');
+    bladeGrad.addColorStop(1, '#98b866');
+
+    gtCtx.strokeStyle = bladeGrad;
+    gtCtx.lineWidth = 3.2 - (i / 48) * 1.2;
+    gtCtx.beginPath();
+    gtCtx.moveTo(bx, by);
+    gtCtx.quadraticCurveTo(bx + curve, by - tLen * 0.55, bx + spread, by - tLen);
+    gtCtx.stroke();
+  }
+  const grassTuftColor = new THREE.CanvasTexture(gtCanvas);
+  grassTuftColor.colorSpace = THREE.SRGBColorSpace;
+  islandTerrainRoughness.anisotropy = aniso;
+
+  // 5B. Surrounding 3D Ocean Water Ripple Texture & Normal Map
+  const waterRng = createRng(99214);
+  const [owCanvas, owCtx] = makeCanvas(256, 256);
+  const [owHCanvas, owHCtx] = makeCanvas(256, 256);
+  owCtx.fillStyle = '#1b729c';
+  owCtx.fillRect(0, 0, 256, 256);
+  owHCtx.fillStyle = '#808080';
+  owHCtx.fillRect(0, 0, 256, 256);
+
+  for (let i = 0; i < 420; i++) {
+    const wx = waterRng() * 256;
+    const wy = waterRng() * 256;
+    const wLen = 14 + waterRng() * 26;
+    owCtx.strokeStyle = waterRng() > 0.45 ? 'rgba(92, 188, 228, 0.25)' : 'rgba(14, 68, 96, 0.28)';
+    owCtx.lineWidth = 1.5 + waterRng() * 1.8;
+    owCtx.beginPath();
+    owCtx.moveTo(wx, wy);
+    owCtx.quadraticCurveTo(wx + wLen * 0.5, wy - 3 + waterRng() * 6, wx + wLen, wy);
+    owCtx.stroke();
+
+    const wh = waterRng() > 0.45 ? 210 : 55;
+    owHCtx.strokeStyle = `rgba(${wh}, ${wh}, ${wh}, 0.36)`;
+    owHCtx.lineWidth = 2.2;
+    owHCtx.beginPath();
+    owHCtx.moveTo(wx, wy);
+    owHCtx.quadraticCurveTo(wx + wLen * 0.5, wy - 3 + waterRng() * 6, wx + wLen, wy);
+    owHCtx.stroke();
+  }
+
+  const oceanRepeat = 110;
+  const oceanWaterColor = new THREE.CanvasTexture(owCanvas);
+  oceanWaterColor.colorSpace = THREE.SRGBColorSpace;
+  oceanWaterColor.wrapS = THREE.RepeatWrapping;
+  oceanWaterColor.wrapT = THREE.RepeatWrapping;
+  oceanWaterColor.repeat.set(oceanRepeat, oceanRepeat);
+  oceanWaterColor.anisotropy = aniso;
+
+  const oceanWaterNormal = heightCanvasToNormalTexture(owHCanvas, 2.4, aniso, oceanRepeat, oceanRepeat);
+
   return {
     floorColor,
     floorRoughness,
@@ -2013,6 +2306,16 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     bulletHoleWood,
     bulletHoleStone,
     bulletHoleMetal,
+    islandTerrainColor,
+    islandTerrainNormal,
+    islandTerrainRoughness,
+    oceanWaterColor,
+    oceanWaterNormal,
+    pineNeedlesColor,
+    pineNeedlesNormal,
+    leafCanopyColor,
+    leafCanopyNormal,
+    grassTuftColor,
     createSignTexture,
     dispose: () => {
       floorColor.dispose();
@@ -2074,6 +2377,16 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
       bulletHoleWood.dispose();
       bulletHoleStone.dispose();
       bulletHoleMetal.dispose();
+      islandTerrainColor.dispose();
+      islandTerrainNormal.dispose();
+      islandTerrainRoughness.dispose();
+      oceanWaterColor.dispose();
+      oceanWaterNormal.dispose();
+      pineNeedlesColor.dispose();
+      pineNeedlesNormal.dispose();
+      leafCanopyColor.dispose();
+      leafCanopyNormal.dispose();
+      grassTuftColor.dispose();
       dynamicTextures.forEach((t) => t.dispose());
     },
   };

@@ -206,3 +206,39 @@ test('dynamic crosshair adapts reticle style per weapon and hides cleanly during
   assert.equal(adsCarbine.outerOpacity, 0);
   assert.equal(adsCarbine.centerDotOpacity, 0);
 });
+
+test('crouching dampens recoil bloom and sharpens stabilization compared to standing or sprinting fire', () => {
+  const crouchedFire = computeDynamicCrosshair({
+    weaponId: 'carbine',
+    movementState: 'crouching',
+    moveSpeedRatio: 0,
+    recoilIntensity: 0.7,
+    ads: false,
+    scopeAlpha: 0,
+    reloading: false,
+  });
+  const standingFire = computeDynamicCrosshair({
+    weaponId: 'carbine',
+    movementState: 'idle',
+    moveSpeedRatio: 0,
+    recoilIntensity: 0.7,
+    ads: false,
+    scopeAlpha: 0,
+    reloading: false,
+  });
+  const sprintingFire = computeDynamicCrosshair({
+    weaponId: 'carbine',
+    movementState: 'sprinting',
+    moveSpeedRatio: 0.9,
+    recoilIntensity: 0.7,
+    ads: false,
+    scopeAlpha: 0,
+    reloading: false,
+  });
+
+  assert.equal(crouchedFire.crouchStabilized, true);
+  assert.equal(standingFire.crouchStabilized, false);
+  assert.ok(crouchedFire.gapPx < standingFire.gapPx, 'Crouched fire should stay tighter than standing fire');
+  assert.ok(standingFire.gapPx < sprintingFire.gapPx, 'Sprinting fire should expand wider than standing fire');
+});
+

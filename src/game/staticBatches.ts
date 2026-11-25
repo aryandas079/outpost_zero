@@ -37,34 +37,67 @@ export class StaticSceneBatches {
     collect(root);
     for (const sources of buckets.values()) {
       if (sources.length < 3) continue;
-      const geometries = sources.map(source => source.geometry.index ? source.geometry.toNonIndexed() : source.geometry.clone());
-      const vertices = geometries.reduce((sum, geometry) => sum + geometry.attributes.position.count, 0);
-      const batch = new THREE.BatchedMesh(sources.length, vertices, 0, sources[0].material as THREE.Material);
-      batch.name = 'Multi-draw static scenery';
-      batch.sortObjects = false;
-      batch.castShadow = sources[0].castShadow;
-      batch.receiveShadow = sources[0].receiveShadow;
-      batch.userData.noCollide = true;
-      const matrix = new THREE.Matrix4();
-      sources.forEach((source, index) => {
-        const geometryId = batch.addGeometry(geometries[index]);
-        const id = batch.addInstance(geometryId);
-        batch.setMatrixAt(id, matrix.multiplyMatrices(inverse, source.matrixWorld));
-        // The source stays available to raycasts and occlusion bounds, while
-        // camera layer zero renders only its corresponding multi-draw instance.
-        const ancestry: THREE.Object3D[] = [];
-        for (let parent: THREE.Object3D | null = source; parent; parent = parent.parent) ancestry.push(parent);
-        this.links.push({ source, batch, id, visible: true, layerMask: source.layers.mask, parent: source.parent, ancestry });
-        source.layers.disable(0);
-        source.layers.enable(31);
-        // Raycasts use the retained world matrix. Rendering should traverse only
-        // the batches, not another 1,350 masked source meshes every frame.
-        source.removeFromParent();
-        geometries[index].dispose();
-      });
-      batch.computeBoundingSphere();
-      root.add(batch);
-      this.batches.push(batch);
+      try {
+        const geometries = sources.map((source) =>
+          source.geometry.index ? source.geometry.toNonIndexed() : source.geometry.clone(),
+        );
+        const vertices = geometries.reduce(
+          (sum, geometry) => sum + (geometry.attributes?.position?.count ?? 0),
+          0,
+        );
+        const indices = geometries.reduce(
+          (sum, geometry) => sum + (geometry.index ? geometry.index.count : 0),
+          0,
+        );
+        if (vertices === 0) {
+          geometries.forEach((g) => g.dispose());
+          continue;
+        }
+
+        const batch = new THREE.BatchedMesh(
+          sources.length,
+          Math.max(vertices, 64),
+          Math.max(indices, 0),
+          sources[0].material as THREE.Material,
+        );
+        batch.name = 'Multi-draw static scenery';
+        batch.sortObjects = false;
+        batch.castShadow = sources[0].castShadow;
+        batch.receiveShadow = sources[0].receiveShadow;
+        batch.userData.noCollide = true;
+        const matrix = new THREE.Matrix4();
+
+        sources.forEach((source, index) => {
+          const geometryId = batch.addGeometry(geometries[index]);
+          const id = batch.addInstance(geometryId);
+          batch.setMatrixAt(id, matrix.multiplyMatrices(inverse, source.matrixWorld));
+          // The source stays available to raycasts and occlusion bounds, while
+          // camera layer zero renders only its corresponding multi-draw instance.
+          const ancestry: THREE.Object3D[] = [];
+          for (let parent: THREE.Object3D | null = source; parent; parent = parent.parent) ancestry.push(parent);
+          this.links.push({
+            source,
+            batch,
+            id,
+            visible: true,
+            layerMask: source.layers.mask,
+            parent: source.parent,
+            ancestry,
+          });
+          source.layers.disable(0);
+          source.layers.enable(31);
+          // Raycasts use the retained world matrix. Rendering should traverse only
+          // the batches, not another 1,350 masked source meshes every frame.
+          source.removeFromParent();
+          geometries[index].dispose();
+        });
+        batch.computeBoundingSphere();
+        root.add(batch);
+        this.batches.push(batch);
+      } catch (err) {
+        // Fall back gracefully to standard individual mesh rendering on unsupported devices/buffers
+        console.warn('StaticSceneBatches fallback on bucket:', err);
+      }
     }
     this.sourceCount = this.links.length;
     this.batchCount = this.batches.length;

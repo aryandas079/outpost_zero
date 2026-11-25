@@ -5,6 +5,9 @@ dist-electron/
 release/
 .aistudio/
 coverage/
+out/
+vcpkg_installed/
+.vs/
 .DS_Store
 *.log
 .env*

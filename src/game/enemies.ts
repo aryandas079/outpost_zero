@@ -28,6 +28,8 @@ export interface EnemyEntity {
   muzzleOffset: THREE.Vector3;
   hp: number;
   maxHp: number;
+  armor: number;
+  maxArmor: number;
   speed: number;
   radius: number;
   scoreValue: number;
@@ -286,11 +288,12 @@ export class EnemyFactory {
     });
     const mapped = <T extends THREE.Object3D>(object?: T): T | undefined => object ? nodeMap.get(object) as T : undefined;
     const hp = Math.round(template.maxHp * waveScale);
+    const armor = Math.round(template.maxArmor * waveScale);
     const names = kind === 'striker' ? STRIKER_CALLSIGNS : kind === 'sentinel' ? SENTINEL_CALLSIGNS : WASP_CALLSIGNS;
     return {
       ...template, id, displayName: names[(id - 1) % names.length], root,
       hitMeshes: template.hitMeshes.map(object => nodeMap.get(object)!),
-      bodyMaterials, coreMaterial, hp, maxHp: hp,
+      bodyMaterials, coreMaterial, hp, maxHp: hp, armor, maxArmor: armor,
       torsoGroup: mapped(template.torsoGroup), headGroup: mapped(template.headGroup),
       weaponGroup: mapped(template.weaponGroup), muzzleFlash: mapped(template.muzzleFlash),
       leftLeg: mapped(template.leftLeg), leftKnee: mapped(template.leftKnee),
@@ -692,8 +695,10 @@ export class EnemyFactory {
 
       const callsigns = heavy ? SENTINEL_CALLSIGNS : STRIKER_CALLSIGNS;
       const displayName = callsigns[(id - 1) % callsigns.length];
-      const baseHp = heavy ? 170 : 82;
+      const baseHp = heavy ? 100 : 58;
+      const baseArmor = heavy ? 80 : 30;
       const hp = Math.round(baseHp * waveScale);
+      const armor = Math.round(baseArmor * waveScale);
 
       return {
         id,
@@ -717,6 +722,8 @@ export class EnemyFactory {
         muzzleOffset,
         hp,
         maxHp: hp,
+        armor,
+        maxArmor: armor,
         speed: heavy ? 2.85 : 4.25,
         radius: heavy ? 0.78 : 0.6,
         scoreValue: heavy ? 300 : 150,
@@ -838,6 +845,8 @@ export class EnemyFactory {
       muzzleOffset: new THREE.Vector3(0, hoverBaseY - 0.16, 0.34),
       hp,
       maxHp: hp,
+      armor: 0,
+      maxArmor: 0,
       speed: 5.7,
       radius: 0.68,
       scoreValue: 200,

@@ -1,19 +1,9 @@
 import React, { useState } from 'react';
-import {
-  ChevronDown,
-  Volume2,
-  VolumeX,
-  Play,
-  RotateCcw,
-  Home,
-  Keyboard,
-} from 'lucide-react';
-import { DIFFICULTY_SPECS, GameSettings, HudSnapshot, MAP_SPECS } from '../game/types';
-import {
-  AUDIO_DYNAMIC_RANGE_ORDER,
-  AUDIO_DYNAMIC_RANGE_PRESETS,
-  getAudioDynamicRangeSpec,
-} from '../game/audioCompression';
+import { GameSettings, HudSnapshot } from '../game/types';
+import { ControlsSettings } from './ControlsSettings';
+import { GraphicsSettings } from './GraphicsSettings';
+import { nativeBridge } from '../utilities/NativeBridge';
+import { BrandHeaderLockup } from './BrandEmblem';
 
 interface ModalOverlayProps {
   hud: HudSnapshot;
@@ -22,9 +12,18 @@ interface ModalOverlayProps {
   onRestart: () => void;
   onContinueEndless: () => void;
   onMainMenu: () => void;
-  onSensitivityChange: (val: number) => void;
+  onSensitivityChange: (sens: number) => void;
   onToggleMute: () => void;
   onSettingsChange: (patch: Partial<GameSettings>) => void;
+  onEnterSpectator?: () => void;
+  onExitApp?: () => void;
+}
+
+function formatSurvival(sec: number): string {
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}`;
 }
 
 export const ModalOverlay: React.FC<ModalOverlayProps> = ({
@@ -37,298 +36,268 @@ export const ModalOverlay: React.FC<ModalOverlayProps> = ({
   onSensitivityChange,
   onToggleMute,
   onSettingsChange,
+  onEnterSpectator,
+  onExitApp,
 }) => {
-  const accuracy = hud.shotsFired > 0 ? Math.round((hud.shotsHit / hud.shotsFired) * 100) : 0;
-  const isPaused = hud.phase === 'paused';
-  const isVictory = hud.phase === 'victory';
-  const mapName = MAP_SPECS[hud.mapId].name;
-  const diffLabel = DIFFICULTY_SPECS[hud.difficulty].label;
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'graphics' | 'controls' | 'audio'>('graphics');
+  const [confirmExitMenu, setConfirmExitMenu] = useState(false);
 
-  // Optional Controls guide expanded state
-  const [showControls, setShowControls] = useState(false);
+  if (hud.phase !== 'paused' && hud.phase !== 'victory' && hud.phase !== 'gameover') {
+    return null;
+  }
+
+  const isIsland = hud.mapId === 'island';
+  const br = hud.battleRoyale;
+  const accuracy = hud.shotsFired > 0 ? Math.round((hud.shotsHit / hud.shotsFired) * 100) : 0;
+  const isVictory = hud.phase === 'victory';
+  const isPaused = hud.phase === 'paused';
+
+  const pauseSubtitle = isIsland ? `25 KM² ISLANDS · ZONE ${br?.stormPhase ?? 1}` : `WAVE ${hud.wave} · ${hud.difficulty.toUpperCase()}`;
 
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-black/80 px-4 py-3 select-none overflow-y-auto">
-      <div className="w-full max-w-md max-h-[96dvh] overflow-y-auto bg-[#0f1622]/98 border border-white/14 rounded-xl p-4 sm:p-6 shadow-2xl space-y-4">
-        {/* Header Breadcrumb & Title */}
-        <div className="border-b border-white/10 pb-3">
-          <p className="text-[11px] font-mono text-amber-400 font-semibold mb-0.5">
-            {hud.multiplayer?.active
-              ? `${hud.multiplayer.mode === 'coop' ? 'Co-op Survival' : 'Deathmatch (PvP)'} · Room ${hud.multiplayer.roomCode}`
-              : `${mapName} · ${diffLabel} · ${isPaused ? 'Paused' : isVictory ? 'Town Secured' : 'Overrun'}`}
-          </p>
-          <h2 className="font-display font-bold text-2xl text-white tracking-tight">
-            {isPaused
-              ? 'Game Paused'
-              : isVictory
-              ? 'Mission Complete'
-              : hud.multiplayer?.mode === 'deathmatch'
-              ? 'Match Concluded'
-              : 'Eliminated'}
-          </h2>
+    <div
+      data-testid="modal-overlay"
+      className="fixed inset-0 z-50 bg-[#080F16]/84 flex items-center justify-center p-4"
+    >
+      <div className="bg-[#10161D] border border-white/15 rounded-xs w-[min(640px,95vw)] max-h-[88vh] flex flex-col shadow-2xl overflow-hidden">
+        {/* Header */}
+        <div className="px-6 py-4 border-b border-white/12 flex items-center justify-between">
+          <div>
+            <div className="mb-1.5">
+              <BrandHeaderLockup subtitle={isIsland ? 'BATTLE ROYALE' : 'WEST FRONTIER'} compact />
+            </div>
+            <h2 className="text-xl font-black tracking-wider text-[#F2F4F5] uppercase mt-0.5">
+              {isPaused
+                ? 'MATCH PAUSED'
+                : isVictory
+                  ? isIsland
+                    ? '#1 VICTORY ROYALE'
+                    : 'SECTOR SECURED'
+                  : isIsland
+                    ? `ELIMINATED · PLACEMENT #${hud.placement ?? br?.aliveCount ?? 2}`
+                    : 'OPERATIVE DOWN'}
+            </h2>
+            <p className="text-xs font-mono text-[#A8B0B8] mt-0.5">
+              {isPaused
+                ? pauseSubtitle
+                : isIsland
+                  ? `25 KM² ISLANDS · ${hud.battleRoyale?.nearestPoi ?? 'ISLAND'}`
+                  : `WEST FRONTIER · WAVE ${hud.wave}`}
+            </p>
+          </div>
+          {!isPaused && (
+            <div
+              className="px-3 py-1 rounded-xs font-mono text-xs font-bold tracking-wider"
+              style={{
+                backgroundColor: isVictory ? 'rgba(96,190,139,0.2)' : 'rgba(224,82,82,0.18)',
+                color: isVictory ? '#60BE8B' : '#E05252',
+              }}
+            >
+              {isVictory ? 'VICTORY' : 'MATCH COMPLETE'}
+            </div>
+          )}
         </div>
 
-        {/* Multiplayer Standings Summary */}
-        {!isPaused && hud.multiplayer?.active && hud.multiplayer.players.length > 0 && (
-          <div className="py-2.5 border-y border-white/10 space-y-2">
-            <span className="text-[11px] font-mono uppercase text-slate-400 font-bold tracking-wider">
-              Final Standings
-            </span>
-            <div className="space-y-1">
-              {[...hud.multiplayer.players]
-                .sort((a, b) => b.kills - a.kills || b.score - a.score)
-                .map((p, idx) => (
-                  <div key={p.id} className="flex items-center justify-between text-xs bg-white/5 rounded px-2.5 py-1.5">
-                    <span className="font-mono text-white font-bold">
-                      #{idx + 1} {p.name}
-                    </span>
-                    <span className="font-mono text-amber-300 font-semibold">
-                      {p.kills} Kills · {p.score} Pts
-                    </span>
+        {/* Scrollable Content */}
+        <div className="p-6 overflow-y-auto space-y-5 flex-1">
+          {/* Stats Summary Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+            {isIsland ? (
+              <>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">PLACEMENT</div>
+                  <div className="text-lg font-bold font-mono text-[#52C7DE] mt-0.5">
+                    #{isVictory ? 1 : hud.placement ?? br?.aliveCount ?? 1} / {br?.totalCombatants ?? 24}
                   </div>
-                ))}
-            </div>
-          </div>
-        )}
-
-        {/* Combat Stats Grid (Victory / Game Over) */}
-        {!isPaused && (
-          <div className="grid grid-cols-2 gap-3 py-3 border-y border-white/10">
-            <div className="p-2.5 bg-[#141d2b] border border-white/10 rounded-lg">
-              <div className="text-[11px] text-slate-400 font-mono mb-0.5">Final Score</div>
-              <div className="font-display font-bold text-xl text-white font-mono-num">
-                {hud.score.toLocaleString()}
-              </div>
-            </div>
-            <div className="p-2.5 bg-[#141d2b] border border-white/10 rounded-lg">
-              <div className="text-[11px] text-slate-400 font-mono mb-0.5">Best Score</div>
-              <div className="font-display font-bold text-xl text-amber-400 font-mono-num">
-                {hud.bestScore.toLocaleString()}
-              </div>
-            </div>
-            <div className="p-2.5 bg-[#141d2b] border border-white/10 rounded-lg">
-              <div className="text-[11px] text-slate-400 font-mono mb-0.5">Eliminations</div>
-              <div className="font-mono font-semibold text-sm text-slate-100">
-                {hud.eliminations} <span className="text-[10px] text-slate-400 font-normal">({hud.headshots} headshots)</span>
-              </div>
-            </div>
-            <div className="p-2.5 bg-[#141d2b] border border-white/10 rounded-lg">
-              <div className="text-[11px] text-slate-400 font-mono mb-0.5">Accuracy · Wave</div>
-              <div className="font-mono font-semibold text-sm text-slate-100">
-                {accuracy}% · Wave {hud.wave}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ===================================================================
-            SIMPLIFIED PAUSE MENU (CLEAN, DIRECT, NO REDUNDANT DROPDOWNS)
-            =================================================================== */}
-        {isPaused && (
-          <div className="space-y-3.5 py-1">
-            {/* Primary Action Button: Resume Mission */}
-            <button
-              type="button"
-              onClick={onResume}
-              className="w-full py-3.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-black text-base tracking-wide rounded-xl transition-all cursor-pointer flex items-center justify-center gap-2.5 shadow-[0_4px_20px_rgba(245,158,11,0.3)] hover:scale-[1.01] active:scale-[0.99]"
-            >
-              <Play className="w-5 h-5 fill-current" />
-              <span>Resume Mission</span>
-            </button>
-
-            {/* Quick Navigation: Restart & Main Menu */}
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={onRestart}
-                className="py-2.5 px-3 bg-[#141d2b] hover:bg-[#1d293d] border border-white/12 text-slate-200 hover:text-white text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2"
-              >
-                <RotateCcw className="w-4 h-4 text-amber-400" />
-                <span>Restart</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onMainMenu}
-                className="py-2.5 px-3 bg-[#141d2b] hover:bg-[#1d293d] border border-white/12 text-slate-200 hover:text-white text-xs font-mono font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2"
-              >
-                <Home className="w-4 h-4 text-cyan-400" />
-                <span>Main Menu</span>
-              </button>
-            </div>
-
-            {/* Simple Controls & Settings Card */}
-            <div className="p-3 bg-[#141d2b] border border-white/10 rounded-xl space-y-3 text-xs">
-              {/* Row 1: Mouse Aim Sensitivity */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5 font-mono">
-                  <span className="text-slate-300 font-medium">Mouse Aim Sensitivity</span>
-                  <span className="text-amber-300 font-bold">{settings.sensitivity.toFixed(2)}x</span>
                 </div>
-                <input
-                  id="pause-sens"
-                  type="range"
-                  min={0.35}
-                  max={2.5}
-                  step={0.05}
-                  value={settings.sensitivity}
-                  onChange={(e) => onSensitivityChange(parseFloat(e.target.value))}
-                  className="w-full accent-amber-500 cursor-pointer h-1.5"
-                />
-              </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">ELIMINATIONS</div>
+                  <div className="text-lg font-bold font-mono text-[#F2F4F5] mt-0.5">{hud.eliminations}</div>
+                </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">DAMAGE DEALT</div>
+                  <div className="text-lg font-bold font-mono text-[#E9B94C] mt-0.5">{hud.damageDealt ?? 0}</div>
+                </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">SURVIVAL TIME</div>
+                  <div className="text-lg font-bold font-mono text-[#F2F4F5] mt-0.5">
+                    {formatSurvival(hud.survivalTimeSec ?? hud.matchTimeSec)}
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">SCORE</div>
+                  <div className="text-lg font-bold font-mono text-[#52C7DE] mt-0.5">{hud.score}</div>
+                </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">ELIMINATIONS</div>
+                  <div className="text-lg font-bold font-mono text-[#F2F4F5] mt-0.5">{hud.eliminations}</div>
+                </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">ACCURACY</div>
+                  <div className="text-lg font-bold font-mono text-[#E9B94C] mt-0.5">{accuracy}%</div>
+                </div>
+                <div className="p-3 bg-[#0B1117] border border-white/10 rounded-xs">
+                  <div className="text-[10px] font-mono text-[#A8B0B8]">WAVE</div>
+                  <div className="text-lg font-bold font-mono text-[#F2F4F5] mt-0.5">
+                    {hud.wave} / {hud.endless ? 'ENDLESS' : hud.maxWaves}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
 
-              {/* Row 2: Sound Effects Toggle */}
-              <div className="flex items-center justify-between pt-2 border-t border-white/8">
-                <span className="text-slate-300 font-mono font-medium">Sound Effects</span>
+          {/* Expandable Settings Drawer inside Pause */}
+          {settingsOpen && (
+            <div className="border border-white/12 bg-[#0D141B] rounded-xs p-4 space-y-4">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <div className="flex gap-2">
+                  {(['graphics', 'audio', 'controls'] as const).map((tab) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setSettingsTab(tab)}
+                      className={`px-3 py-1 text-[10px] font-mono font-bold uppercase rounded-xs cursor-pointer ${
+                        settingsTab === tab ? 'bg-[#52C7DE] text-[#10161D]' : 'bg-white/6 text-[#A8B0B8]'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
                 <button
                   type="button"
-                  onClick={onToggleMute}
-                  className="inline-flex items-center gap-1.5 px-3 py-1 text-xs font-mono font-bold rounded-md border transition-colors cursor-pointer"
-                  style={{
-                    backgroundColor: !settings.muted ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                    borderColor: !settings.muted ? 'rgba(16, 185, 129, 0.4)' : 'rgba(239, 68, 68, 0.4)',
-                    color: !settings.muted ? '#6ee7b7' : '#fca5a5',
-                  }}
+                  onClick={() => setSettingsOpen(false)}
+                  className="text-[10px] font-mono text-[#A8B0B8] hover:text-[#F2F4F5] cursor-pointer"
                 >
-                  {!settings.muted ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
-                  <span>{!settings.muted ? 'Enabled' : 'Muted'}</span>
+                  HIDE
                 </button>
               </div>
 
-              {/* Row 2B: Dynamic Range Compression (Wide / Balanced / Footstep Boost) */}
-              {(() => {
-                const activeDrc = getAudioDynamicRangeSpec(settings.audioDynamicRange);
-                return (
-                  <div className="pt-2 border-t border-white/8">
-                    <div className="flex items-center justify-between mb-1.5 font-mono text-[11px]">
-                      <span className="text-slate-300 font-medium">Dynamic Range</span>
-                      <span className="text-emerald-300 font-bold uppercase">{activeDrc.label}</span>
-                    </div>
-                    <div className="grid grid-cols-3 gap-1.5" role="radiogroup" aria-label="Dynamic Range Compression">
-                      {AUDIO_DYNAMIC_RANGE_ORDER.map((presetId) => {
-                        const spec = AUDIO_DYNAMIC_RANGE_PRESETS[presetId];
-                        const active = activeDrc.id === presetId;
-                        return (
-                          <button
-                            key={presetId}
-                            type="button"
-                            role="radio"
-                            aria-checked={active}
-                            onClick={() => onSettingsChange({ audioDynamicRange: presetId })}
-                            className={`py-1.5 px-2 rounded-md font-mono text-xs font-bold transition-all cursor-pointer ${
-                              active
-                                ? 'bg-amber-400 text-slate-950 shadow'
-                                : 'bg-[#0d131d] text-slate-400 hover:text-white border border-white/10'
-                            }`}
-                          >
-                            {spec.shortLabel}
-                          </button>
-                        );
-                      })}
-                    </div>
-                    <p className="mt-1.5 text-[10px] text-slate-400 leading-snug">
-                      {activeDrc.description}
-                    </p>
+              {settingsTab === 'graphics' && <GraphicsSettings settings={settings} onChange={onSettingsChange} />}
+              {settingsTab === 'controls' && <ControlsSettings settings={settings} onChange={onSettingsChange} />}
+              {settingsTab === 'audio' && (
+                <div className="space-y-3 text-xs font-mono">
+                  <div className="flex items-center justify-between p-2.5 bg-[#0B1117] border border-white/10 rounded-xs">
+                    <span className="text-[#A8B0B8]">LOOK SENSITIVITY ({settings.sensitivity.toFixed(2)})</span>
+                    <input
+                      type="range"
+                      min={0.35}
+                      max={2.2}
+                      step={0.05}
+                      value={settings.sensitivity}
+                      onChange={(e) => onSensitivityChange(Number(e.target.value))}
+                      className="w-40 accent-[#52C7DE]"
+                    />
                   </div>
-                );
-              })()}
-
-              {/* Row 3: Simple Graphics Preset (Performance / Balanced / Quality) */}
-              <div className="pt-2 border-t border-white/8">
-                <div className="flex items-center justify-between mb-1.5 font-mono text-[11px]">
-                  <span className="text-slate-300 font-medium">Graphics Quality</span>
-                  <span className="text-cyan-300 font-bold uppercase">{settings.graphicsPreset}</span>
-                </div>
-                <div className="grid grid-cols-3 gap-1.5">
-                  {(['performance', 'balanced', 'quality'] as const).map((preset) => {
-                    const active = settings.graphicsPreset === preset;
-                    return (
-                      <button
-                        key={preset}
-                        type="button"
-                        onClick={() => onSettingsChange({ graphicsPreset: preset })}
-                        className={`py-1.5 px-2 rounded-md font-mono text-xs font-bold capitalize transition-all cursor-pointer ${
-                          active
-                            ? 'bg-amber-400 text-slate-950 shadow'
-                            : 'bg-[#0d131d] text-slate-400 hover:text-white border border-white/10'
-                        }`}
-                      >
-                        {preset}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Keyboard Reference Accordion */}
-            <div className="border border-white/8 rounded-lg overflow-hidden bg-[#141d2b]/40">
-              <button
-                type="button"
-                onClick={() => setShowControls((prev) => !prev)}
-                className="w-full px-3 py-2 flex items-center justify-between text-left text-xs font-mono text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-              >
-                <div className="flex items-center gap-1.5">
-                  <Keyboard className="w-3.5 h-3.5 text-slate-400" />
-                  <span>View Keyboard Controls</span>
-                </div>
-                <ChevronDown
-                  className={`w-3.5 h-3.5 transition-transform duration-200 ${showControls ? 'rotate-180 text-amber-400' : ''}`}
-                />
-              </button>
-
-              {showControls && (
-                <div className="px-3 pb-3 pt-1 border-t border-white/8 bg-[#0d131d]/90 grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] font-mono text-slate-300">
-                  <div><span className="text-amber-300 font-bold">WASD</span> : Move</div>
-                  <div><span className="text-amber-300 font-bold">Mouse</span> : Aim / Look</div>
-                  <div><span className="text-amber-300 font-bold">Left Click</span> : Fire</div>
-                  <div><span className="text-amber-300 font-bold">Right Click</span> : Aim (ADS)</div>
-                  <div><span className="text-amber-300 font-bold">R</span> : Reload</div>
-                  <div><span className="text-amber-300 font-bold">F</span> : Dash</div>
-                  <div><span className="text-amber-300 font-bold">Q / G</span> : Grenade</div>
-                  <div><span className="text-amber-300 font-bold">Space / C</span> : Jump / Crouch</div>
+                  <div className="flex items-center justify-between p-2.5 bg-[#0B1117] border border-white/10 rounded-xs">
+                    <span className="text-[#A8B0B8]">MASTER AUDIO</span>
+                    <button
+                      type="button"
+                      onClick={onToggleMute}
+                      className="px-3 py-1 bg-white/10 text-[#F2F4F5] rounded-xs cursor-pointer"
+                    >
+                      {hud.muted ? 'UNMUTE' : 'MUTE'}
+                    </button>
+                  </div>
                 </div>
               )}
             </div>
-          </div>
-        )}
+          )}
 
-        {/* Victory / Game Over Action Buttons */}
-        {!isPaused && (
-          <div className="pt-2 border-t border-white/10 flex flex-col gap-2">
-            {isVictory && (
+          {/* Main Action Buttons */}
+          {!confirmExitMenu ? (
+            <div className="flex flex-wrap gap-2.5 pt-1">
+              {isPaused && (
+                <button
+                  type="button"
+                  onClick={onResume}
+                  className="flex-1 min-w-[140px] py-2.5 px-4 bg-[#52C7DE] hover:bg-[#6DD4E8] text-[#10161D] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
+                >
+                  RESUME MATCH
+                </button>
+              )}
+              {isPaused && (
+                <button
+                  type="button"
+                  onClick={() => setSettingsOpen((v) => !v)}
+                  className="py-2.5 px-4 bg-white/10 hover:bg-white/18 text-[#F2F4F5] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
+                >
+                  {settingsOpen ? 'CLOSE SETTINGS' : 'SETTINGS'}
+                </button>
+              )}
+              {!isPaused && isIsland && hud.phase === 'gameover' && (hud.enemiesRemaining > 0) && onEnterSpectator && (
+                <button
+                  type="button"
+                  onClick={onEnterSpectator}
+                  className="py-2.5 px-4 bg-[#52C7DE] hover:bg-[#6DD4E8] text-[#10161D] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
+                >
+                  SPECTATE MATCH
+                </button>
+              )}
+              {!isIsland && isVictory && !hud.endless && (
+                <button
+                  type="button"
+                  onClick={onContinueEndless}
+                  className="flex-1 min-w-[140px] py-2.5 px-4 bg-[#60BE8B] hover:bg-[#72CFA0] text-[#10161D] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
+                >
+                  CONTINUE ENDLESS
+                </button>
+              )}
               <button
                 type="button"
-                onClick={onContinueEndless}
-                className="w-full py-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-display font-bold text-sm tracking-wide rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-2 shadow-[0_2px_12px_rgba(245,158,11,0.25)]"
-              >
-                <Play className="w-4 h-4 fill-current" />
-                <span>Continue Endless Protocol</span>
-              </button>
-            )}
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                data-start="true"
                 onClick={onRestart}
-                className="py-2.5 px-3 bg-[#141d2b] hover:bg-[#1c293d] border border-white/12 text-slate-200 hover:text-white text-xs font-mono rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                className="py-2.5 px-4 bg-white/10 hover:bg-white/18 text-[#F2F4F5] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
               >
-                <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-                <span>Play Again</span>
+                {isIsland ? 'PLAY AGAIN' : 'RESTART MATCH'}
               </button>
-
               <button
                 type="button"
-                onClick={onMainMenu}
-                className="py-2.5 px-3 bg-[#141d2b] hover:bg-[#1c293d] border border-white/12 text-slate-200 hover:text-white text-xs font-mono rounded-lg transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                onClick={() => (isPaused ? setConfirmExitMenu(true) : onMainMenu())}
+                className="py-2.5 px-4 bg-white/6 hover:bg-white/14 border border-white/12 text-[#A8B0B8] hover:text-[#F2F4F5] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
               >
-                <Home className="w-3.5 h-3.5 text-slate-400" />
-                <span>Main Menu</span>
+                MAIN MENU
               </button>
+              {nativeBridge.isNativeWinUI && (
+                <button
+                  type="button"
+                  onClick={() => (onExitApp ? onExitApp() : nativeBridge.exitApplication())}
+                  className="py-2.5 px-4 bg-[#E05252]/18 hover:bg-[#E05252]/30 border border-[#E05252]/40 text-[#E05252] font-bold tracking-wider text-xs uppercase rounded-xs cursor-pointer"
+                >
+                  EXIT DESKTOP
+                </button>
+              )}
             </div>
-          </div>
-        )}
+          ) : (
+            <div className="p-4 bg-[#171216] border border-[#E05252]/40 rounded-xs flex flex-wrap items-center justify-between gap-3">
+              <span className="text-xs font-mono text-[#F2F4F5]">
+                ABORT ACTIVE DEPLOYMENT AND RETURN TO MAIN MENU?
+              </span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmExitMenu(false)}
+                  className="px-3 py-1.5 bg-white/10 text-[#F2F4F5] text-xs font-bold rounded-xs cursor-pointer"
+                >
+                  CANCEL
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmExitMenu(false);
+                    onMainMenu();
+                  }}
+                  className="px-3 py-1.5 bg-[#E05252] text-[#F2F4F5] text-xs font-bold rounded-xs cursor-pointer"
+                >
+                  CONFIRM QUIT
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

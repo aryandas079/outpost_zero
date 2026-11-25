@@ -2,71 +2,454 @@
 .model-review-tools button { padding:7px 10px; font:11px Arial,sans-serif; color:#dce2e2; background:#152027d9; border:1px solid #647880; border-radius:3px; cursor:pointer; }
 .model-review-tools button[aria-pressed=true] { color:#6de0ec; border-color:#6de0ec; }
 
-/* Reference-style in-match HUD: lightweight smoked glass and hairline frames. */
-.tactical-hud { z-index:30; --hud-cyan: #57d7ee; --hud-gold: #efb54e; position:absolute; inset:0; color:#f0f1ef; font-family:'Arial Narrow','Bahnschrift Condensed','Roboto Condensed',Arial,sans-serif; font-stretch:condensed; font-weight:400; text-shadow:0 1px 3px #0009; pointer-events:none; }
-.tactical-hud button { pointer-events:auto; cursor:pointer; }
-.tactical-hud button:disabled { cursor:default; opacity:.4; }
-.tactical-hud button:focus-visible { outline:2px solid var(--hud-cyan); outline-offset:3px; }
-.tac-match { position:absolute; top:14px; left:22px; display:flex; gap:12px; align-items:flex-start; }
-.tac-crest { width:51px; height:55px; color:#f0f3f0; filter:drop-shadow(0 2px 4px #000b); }
-.tac-match-body { width:201px; }
-.tac-mode { font-size:12px; letter-spacing:.45px; line-height:17px; }
-.tac-match-scores { display:flex; align-items:center; padding:2px 9px 3px 0; background:linear-gradient(90deg,#161b20bd,#161b2059); clip-path:polygon(0 0,100% 0,96% 100%,0 100%); }
-.tac-score-bars { width:128px; }
-.tac-score-bars>div { display:flex; gap:8px; align-items:center; height:16px; }
-.tac-score-bars strong { width:23px; font-size:18px; line-height:16px; font-weight:400; font-variant-numeric:tabular-nums; }
-.tac-score-bars i { height:5px; width:95px; background:#d0d3cf28; transform:skewX(-20deg); }
-.tac-score-bars b { display:block; height:100%; background:var(--hud-cyan); }
-.tac-score-bars b.tac-score-hostile { background:var(--hud-gold); }
-.tac-match time { margin-left:13px; padding-left:10px; border-left:1px solid #b8bdc5aa; transform:skewX(-10deg); font-size:15px; font-variant-numeric:tabular-nums; }
-.tac-status { color:var(--hud-cyan); margin-top:4px; font-size:11px; letter-spacing:.25px; }
-.tac-killfeed { position:absolute; left:0; top:95px; font-size:12px; }
-.tac-killfeed>div { display:flex; align-items:center; gap:8px; background:linear-gradient(90deg,#10161c9c,transparent); padding:2px 6px; }
-.tac-killfeed svg { width:34px; height:14px; }
-.tac-killfeed span:first-child { color:#6ad6f1; }.tac-killfeed span:last-child { color:#e3816c; }
-.tac-compass { position:absolute; top:7px; left:50%; width:min(40vw,500px); transform:translateX(-50%); height:35px; overflow:hidden; }
-.tac-compass-tick { position:absolute; top:0; transform:translateX(-50%); display:flex; align-items:center; flex-direction:column; font-size:11px; color:#c0c5ca; gap:3px; }
-.tac-compass-tick i { height:7px; width:1px; background:#c4c9ca; }.tac-compass-tick.is-cardinal { color:white; font-size:12px; }.tac-compass-tick.is-cardinal i { height:9px; }
-.tac-bearing { position:absolute; left:50%; top:0; transform:translateX(-50%); color:var(--hud-gold); font-size:18px; line-height:20px; display:flex; align-items:center; flex-direction:column; }
-.tac-bearing i { width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:6px solid white; margin-bottom:2px; }
-.tac-radar { position:absolute; top:6px; right:14px; display:flex; gap:13px; align-items:flex-start; }
-.tac-utilities { padding-top:10px; display:flex; flex-direction:column; gap:7px; }
-.tac-utilities button { width:29px; height:29px; display:grid; place-items:center; background:#1b242bc9; border:1px solid #b2bbc222; border-radius:4px; color:#f1f2ef; transition:background-color .15s,border-color .15s; }
-.tac-utilities button:hover { background:#27343ed9; border-color:#57d7ee66; }
-.tac-utilities svg { width:16px; height:16px; }
-.tac-panel { position:relative; overflow:hidden; background:linear-gradient(115deg,#202424c4,#171b1db8); border:1px solid #c7cecf75; box-shadow:0 1px 5px #0003; animation:tac-panel-flicker 7.5s linear infinite; will-change:opacity,transform,filter; }
-.tac-panel::after { content:''; position:absolute; inset:0; pointer-events:none; background:repeating-linear-gradient(0deg,rgba(87,215,238,0.09) 0px,rgba(87,215,238,0.09) 1px,transparent 1px,transparent 3px),linear-gradient(180deg,transparent 0%,rgba(87,215,238,0.22) 48%,transparent 100%); opacity:0; transform:translate3d(0,-100%,0); animation:tac-panel-scanline 7.5s linear infinite; }
-.tac-vitals-equipment { position:absolute; bottom:27px; left:30px; display:flex; gap:24px; align-items:center; }
-.tac-vitals { width:201px; padding:7px 12px 7px 10px; clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px); }
-.tac-vitals>div { display:flex; align-items:center; gap:8px; height:23px; }
-.tac-vitals svg { width:16px; height:16px; stroke-width:3; }.tac-vitals>div:first-child svg { color:var(--hud-cyan); }
-.tac-vitals strong { width:32px; font-size:18px; line-height:20px; font-weight:500; font-variant-numeric:tabular-nums; }
-.tac-vitals i { width:104px; height:5px; background:#c5c7c629; transform:skewX(-20deg); }
-.tac-vitals b { display:block; height:100%; background:#f0f1ee; transition:width .15s; }.tac-vitals>div:first-child b { background:var(--hud-cyan); }
-.tac-vitals.is-critical { animation-duration:4.2s; }
-.tac-vitals.is-critical::after { animation-duration:4.2s; background:repeating-linear-gradient(0deg,rgba(237,101,92,0.12) 0px,rgba(237,101,92,0.12) 1px,transparent 1px,transparent 3px),linear-gradient(180deg,transparent 0%,rgba(237,101,92,0.26) 48%,transparent 100%); }
-.tac-vitals.is-critical>div:last-child { color:#fa7770; }.tac-vitals.is-critical>div:last-child b { background:#ed655c; }
-.tac-equipment { display:flex; gap:10px; padding-left:8px; border-left:1px solid #e0e3e05c; }
-.tac-equipment button { position:relative; width:43px; height:40px; display:flex; justify-content:center; align-items:center; border:1px solid #d6dcdd73; border-radius:3px; background:#1e2425a3; transform:skewX(-13deg); }
-.tac-equipment button>svg { width:22px; height:25px; transform:skewX(13deg); }.tac-equipment button:hover { background:#3a4c51c9; }
-.tac-equipment kbd { position:absolute; bottom:-15px; left:15px; background:#d3d6d4bd; color:#343738; font-size:10px; line-height:12px; border-radius:2px; min-width:11px; text-align:center; transform:skewX(13deg); text-shadow:none; }
-.tac-equipment small { position:absolute; top:1px; right:3px; font-size:9px; }.tac-dash-bars { position:absolute; display:flex; gap:3px; bottom:3px; }.tac-dash-bars i { width:6px; height:4px; background:var(--hud-gold); }
-.tac-weapon { position:absolute; bottom:27px; right:25px; width:263px; padding:4px 11px 7px 31px; clip-path:polygon(31px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%); animation-delay:-2.9s; }
-.tac-weapon::after { animation-delay:-2.9s; }
-.tac-weapon::before { content:''; position:absolute; left:14px; top:-5px; height:90px; width:2px; background:var(--hud-cyan); transform:rotate(25deg); }
-.tac-weapon-header { display:flex; align-items:center; gap:7px; padding-bottom:3px; border-bottom:1px solid #b3b9b446; line-height:17px; white-space:nowrap; }
-.tac-weapon-header>span { font-size:13px; flex:1; }.tac-weapon-header>i { color:#a0a6a282; font-weight:bold; font-size:21px; line-height:16px; letter-spacing:-4px; margin-right:12px; }
-.tac-weapon-header small { font-size:10px; color:var(--hud-gold); }
-.tac-ammunition { display:flex; align-items:center; justify-content:space-between; height:37px; }
-.tac-ammunition>div { display:flex; align-items:baseline; gap:6px; }.tac-ammunition strong { font-size:33px; font-weight:400; line-height:37px; font-variant-numeric:tabular-nums; }.tac-ammunition span { font-size:20px; color:#b3b6b3; }.tac-ammunition .is-low { color:#ef9a75; }
-.tac-ammunition>svg { width:91px; height:32px; opacity:.85; }.tac-reload { height:2px; background:#9da69d44; }.tac-reload i { height:100%; background:var(--hud-gold); display:block; }
-.tac-inventory { position:absolute; bottom:9px; left:50%; transform:translateX(-50%); display:flex; gap:2px; opacity:.75; }
-.tac-inventory button { width:65px; height:33px; position:relative; background:#171c205c; border:1px solid #adb6b42e; color:#e6e9e3; border-radius:2px; padding:4px 8px; }
-.tac-inventory button[aria-pressed=true] { border-color:#d0d6d3b0; background:#c5d1cc17; }.tac-inventory svg { width:100%; height:24px; }.tac-inventory kbd { position:absolute; right:3px; bottom:1px; font-size:9px; }
-@media (min-width:1600px) { .tac-vitals-equipment { bottom:36px; left:40px; }.tac-weapon { bottom:36px; right:34px; }.tac-match { top:20px; left:30px; } }
-@media (max-width:900px) { .tac-match { left:12px; top:10px; gap:6px; }.tac-crest { width:36px; height:42px; }.tac-match-body { width:160px; }.tac-score-bars { width:100px; }.tac-score-bars i { width:70px; }.tac-match time { font-size:12px; margin-left:6px; padding-left:5px; }.tac-mode { font-size:10px; }.tac-compass { width:32vw; }.tac-radar { right:8px; gap:6px; }.tac-vitals-equipment { left:16px; bottom:22px; gap:12px; }.tac-vitals { width:166px; padding:4px 8px; }.tac-equipment { gap:6px; }.tac-equipment button { width:32px; height:34px; }.tac-weapon { width:230px; right:16px; bottom:22px; }.tac-inventory button { width:46px; height:26px; }.tac-inventory { bottom:3px; }.tac-inventory svg { height:18px; } }
-.tactical-hud--mobile .tac-vitals-equipment { bottom:120px; left:12px; }.tactical-hud--mobile .tac-weapon { bottom:140px; right:12px; }.tactical-hud--mobile .tac-inventory { bottom:8px; }
-@media (max-width:650px) { .tac-compass { display:none; }.tac-equipment { display:none; }.tac-inventory { max-width:40vw; }.tac-inventory button { width:34px; }.tac-weapon { width:205px; }.tac-weapon-header>span { font-size:11px; }.tac-weapon-header>i { display:none; }.tac-utilities { gap:3px; }.tac-utilities button { width:24px; height:24px; } }
+/* =========================================================================
+   MILITARY TACTICAL HUD (Inspired by CoD: Warzone, Apex Legends, PUBG)
+   Exact match to Reference Layout (Image 1):
+   - Top-Left: Outpost Zero header, 24 ALIVE 0 KILLS, ZONE 1 · 02:34
+   - Top-Center: Horizontal Compass Heading Tape with amber chevron indicator
+   - Top-Right: Circular Radar Minimap with uncluttered tactical geometry
+   - Bottom-Left: Dark #10161D panel with ARMOR (cyan bar) & HEALTH (white/green bar)
+   - Bottom-Center: Subtle minimalist weapon slots (1 2 3 4)
+   - Bottom-Right: Dark #10161D panel with weapon name, 17 / 68 ammo counter, silhouette
+   ========================================================================= */
+
+.tactical-hud {
+  z-index: 30;
+  --hud-bg: #10161d;
+  --hud-border: rgba(255, 255, 255, 0.12);
+  --hud-text-primary: #f2f4f5;
+  --hud-text-secondary: #a8b0b8;
+  --hud-text-muted: #64748b;
+  --hud-cyan: #52c7de;
+  --hud-gold: #e9b94c;
+  --hud-emerald: #60be8b;
+  --hud-danger: #e05252;
+  position: absolute;
+  inset: 0;
+  color: var(--hud-text-primary);
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.75);
+  pointer-events: none;
+}
+.tactical-hud button { pointer-events: auto; cursor: pointer; }
+.tactical-hud button:disabled { cursor: default; opacity: 0.4; }
+.tactical-hud button:focus-visible { outline: 2px solid var(--hud-cyan); outline-offset: 2px; }
+
+/* Top-Left Match Header */
+.tac-match-card {
+  position: absolute;
+  top: 18px;
+  left: 24px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  padding: 10px 16px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+}
+.tac-match-title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--hud-text-primary);
+  margin-bottom: 4px;
+}
+.tac-match-stats {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.05em;
+  color: var(--hud-text-secondary);
+  margin-bottom: 2px;
+}
+.tac-match-stats strong {
+  color: var(--hud-text-primary);
+  font-weight: 700;
+  font-size: 13px;
+  margin-right: 4px;
+}
+.tac-match-zone {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--hud-gold);
+  letter-spacing: 0.04em;
+}
+
+/* Killfeed */
+.tac-killfeed {
+  position: absolute;
+  left: 24px;
+  top: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.tac-killfeed > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(16, 22, 29, 0.85);
+  border-left: 2px solid var(--hud-cyan);
+  padding: 3px 8px;
+  border-radius: 2px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tac-killfeed svg { width: 30px; height: 13px; }
+
+/* Top-Center Horizontal Compass Heading Tape */
+.tac-compass-wrap {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(440px, 42vw);
+  height: 48px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  background: linear-gradient(180deg, rgba(16, 22, 29, 0.85) 0%, rgba(16, 22, 29, 0.35) 75%, transparent 100%);
+  border-radius: 0 0 6px 6px;
+  overflow: hidden;
+  pointer-events: none;
+}
+.tac-compass-tape {
+  position: relative;
+  width: 100%;
+  height: 38px;
+  overflow: hidden;
+}
+.tac-compass-tick-col {
+  position: absolute;
+  top: 2px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+}
+.tac-compass-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: var(--hud-text-secondary);
+  line-height: 12px;
+}
+.tac-compass-label.is-cardinal {
+  color: #ffffff;
+  font-weight: 800;
+}
+.tac-compass-line {
+  width: 1px;
+  background: rgba(255, 255, 255, 0.35);
+  height: 6px;
+}
+.tac-compass-line.is-major {
+  height: 10px;
+  width: 1.5px;
+  background: rgba(255, 255, 255, 0.75);
+}
+.tac-compass-center-indicator {
+  position: absolute;
+  bottom: 2px;
+  left: 50%;
+  transform: translateX(-50%);
+  color: var(--hud-gold);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Top-Right Radar and Utilities */
+.tac-radar-cluster {
+  position: absolute;
+  top: 14px;
+  right: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.tac-utilities-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+.tac-util-btn {
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  background: rgba(16, 22, 29, 0.85);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  color: var(--hud-text-secondary);
+  transition: all 0.15s ease;
+}
+.tac-util-btn:hover {
+  background: rgba(26, 36, 48, 0.95);
+  border-color: var(--hud-cyan);
+  color: #ffffff;
+}
+.tac-util-btn svg { width: 15px; height: 15px; }
+
+/* Bottom-Left Vitals and Equipment */
+.tac-vitals-group {
+  position: absolute;
+  bottom: 22px;
+  left: 24px;
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+.tac-vitals-card {
+  width: 230px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.tac-vital-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.tac-vital-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--hud-text-secondary);
+  width: 52px;
+}
+.tac-vital-track {
+  position: relative;
+  flex: 1;
+  height: 8px;
+  background: #17202a;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.tac-vital-fill-armor {
+  height: 100%;
+  background: var(--hud-cyan);
+  border-radius: 2px;
+  transition: width 0.15s ease;
+}
+.tac-vital-fill-health {
+  height: 100%;
+  background: var(--hud-text-primary);
+  border-radius: 2px;
+  transition: width 0.15s ease, background-color 0.2s ease;
+}
+.tac-vital-fill-health.is-regenerating {
+  background: var(--hud-emerald);
+  box-shadow: 0 0 8px rgba(96, 190, 139, 0.7);
+}
+.tac-vital-fill-health.is-low {
+  background: var(--hud-danger);
+}
+.tac-vital-value {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hud-text-primary);
+  width: 28px;
+  text-align: right;
+}
+
+/* Equipment Buttons */
+.tac-equipment-row {
+  display: flex;
+  gap: 6px;
+  padding-bottom: 2px;
+}
+.tac-equip-btn {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  color: var(--hud-text-primary);
+  transition: all 0.15s ease;
+}
+.tac-equip-btn:hover {
+  background: rgba(26, 36, 48, 0.95);
+  border-color: var(--hud-cyan);
+}
+.tac-equip-btn svg { width: 18px; height: 18px; }
+.tac-equip-kbd {
+  position: absolute;
+  bottom: -6px;
+  right: -3px;
+  background: #2a3542;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: #e2e8f0;
+  font-size: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  line-height: 10px;
+  padding: 0 3px;
+  border-radius: 2px;
+}
+.tac-equip-count {
+  position: absolute;
+  top: 1px;
+  left: 3px;
+  font-size: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--hud-gold);
+}
+.tac-dash-meter {
+  position: absolute;
+  bottom: 2px;
+  display: flex;
+  gap: 2px;
+}
+.tac-dash-meter i {
+  width: 5px;
+  height: 2px;
+  background: var(--hud-gold);
+  border-radius: 1px;
+}
+
+/* Bottom-Center Minimalist Weapon Slots (1 2 3 4) */
+.tac-inventory-bar {
+  position: absolute;
+  bottom: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(16, 22, 29, 0.75);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  padding: 4px 14px;
+  backdrop-filter: blur(6px);
+}
+.tac-slot-indicator {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--hud-text-muted);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 2px;
+  transition: all 0.15s ease;
+}
+.tac-slot-indicator:hover {
+  color: var(--hud-text-secondary);
+}
+.tac-slot-indicator.is-active {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.12);
+  border-bottom: 2px solid var(--hud-cyan);
+}
+
+/* Bottom-Right Weapon & Ammo Panel */
+.tac-weapon-card {
+  position: absolute;
+  bottom: 22px;
+  right: 24px;
+  width: 250px;
+  background: var(--hud-bg);
+  border: 1px solid var(--hud-border);
+  border-radius: 4px;
+  padding: 10px 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.tac-weapon-info {
+  display: flex;
+  flex-direction: column;
+}
+.tac-weapon-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--hud-text-secondary);
+  margin-bottom: 2px;
+}
+.tac-ammo-count {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  font-family: 'JetBrains Mono', monospace;
+}
+.tac-ammo-clip {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 32px;
+  color: #ffffff;
+  font-variant-numeric: tabular-nums;
+}
+.tac-ammo-clip.is-low {
+  color: var(--hud-danger);
+}
+.tac-ammo-reserve {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--hud-text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.tac-weapon-silhouette-wrap {
+  width: 80px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  color: var(--hud-text-primary);
+  opacity: 0.9;
+}
+.tac-weapon-reload-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  border-radius: 0 0 4px 4px;
+}
+.tac-weapon-reload-bar i {
+  display: block;
+  height: 100%;
+  background: var(--hud-gold);
+}
+
+@media (max-width: 900px) {
+  .tac-match-card { left: 12px; top: 12px; padding: 6px 10px; }
+  .tac-compass-wrap { width: 36vw; height: 40px; }
+  .tac-radar-cluster { right: 12px; top: 12px; }
+  .tac-vitals-group { left: 12px; bottom: 16px; }
+  .tac-vitals-card { width: 180px; padding: 6px 10px; }
+  .tac-weapon-card { right: 12px; bottom: 16px; width: 200px; padding: 6px 10px; }
+  .tac-weapon-silhouette-wrap { width: 55px; }
+  .tac-ammo-clip { font-size: 24px; }
+}
+
+.tactical-hud--mobile .tac-vitals-group { bottom: 120px; left: 12px; }
+.tactical-hud--mobile .tac-weapon-card { bottom: 140px; right: 12px; }
+.tactical-hud--mobile .tac-inventory-bar { bottom: 8px; }
 
 @layer base {
   html,
@@ -145,6 +528,33 @@
 
 .animate-crosshair-ring {
   animation: crosshair-flash-ring 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes crosshair-dmg-pop {
+  0% {
+    transform: translate3d(calc(var(--dmg-x, 24px) - 4px), calc(var(--dmg-y, -18px) + 5px), 0) scale(0.68);
+    opacity: 0;
+  }
+  14% {
+    transform: translate3d(var(--dmg-x, 24px), calc(var(--dmg-y, -18px) - 3px), 0) scale(calc(var(--dmg-scale, 1) * 1.14));
+    opacity: 1;
+  }
+  28% {
+    transform: translate3d(calc(var(--dmg-x, 24px) + var(--dmg-drift-x, 12px) * 0.25), calc(var(--dmg-y, -18px) - 8px), 0) scale(var(--dmg-scale, 1));
+    opacity: 1;
+  }
+  70% {
+    transform: translate3d(calc(var(--dmg-x, 24px) + var(--dmg-drift-x, 12px) * 0.72), calc(var(--dmg-y, -18px) - 18px), 0) scale(var(--dmg-scale, 1));
+    opacity: 0.96;
+  }
+  100% {
+    transform: translate3d(calc(var(--dmg-x, 24px) + var(--dmg-drift-x, 12px)), calc(var(--dmg-y, -18px) - 28px), 0) scale(calc(var(--dmg-scale, 1) * 0.9));
+    opacity: 0;
+  }
+}
+
+.animate-crosshair-damage {
+  animation: crosshair-dmg-pop 720ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-phone-rotate {
@@ -293,4 +703,36 @@
   .loadout-footer { padding: 10px 20px; }
 }
 /* Minimal tactical layout utilities */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
 
+
+
+/* Custom Slim Dark Military Tactical Scrollbars (eliminates bright OS browser scrollbars) */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(82, 199, 222, 0.35) rgba(11, 17, 23, 0.9);
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(11, 17, 23, 0.92);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: rgba(82, 199, 222, 0.32);
+  border-radius: 2px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(82, 199, 222, 0.55);
+}

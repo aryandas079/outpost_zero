@@ -135,6 +135,12 @@ export class RemotePlayerManager {
     entity.muzzleFlash.rotation.z = Math.random() * Math.PI * 2;
   }
 
+  public getPlayerVitals(playerId: string): { health: number; shield: number } | null {
+    const entity = this.players.get(playerId);
+    if (!entity) return null;
+    return { health: entity.profile.health, shield: entity.profile.shield };
+  }
+
   public triggerDamage(playerId: string, amount: number, isHeadshot: boolean) {
     const entity = this.players.get(playerId);
     if (!entity) return;

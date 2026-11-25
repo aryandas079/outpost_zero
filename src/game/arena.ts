@@ -66,6 +66,8 @@ export interface ArenaData {
   arenaHalfSize: number;
   bounds: ArenaBounds;
   animatedProps: ArenaAnimatedProps;
+  terrainHeightAt?: (x: number, z: number) => number;
+  terrainNormalAt?: (x: number, z: number, out: THREE.Vector3) => void;
   optimizeRendering: () => { before: number; after: number };
   dispose: () => void;
 }

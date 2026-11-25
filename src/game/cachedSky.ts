@@ -3,8 +3,13 @@ import * as THREE from 'three';
 /** Evaluate the cloud shader on a small cubemap rather than every screen pixel. */
 export class CachedSky {
   private readonly scene = new THREE.Scene();
-  private readonly target = new THREE.WebGLCubeRenderTarget(256, { type: THREE.HalfFloatType });
-  private readonly camera = new THREE.CubeCamera(1, 340, this.target);
+  private readonly target = new THREE.WebGLCubeRenderTarget(512, {
+    type: THREE.HalfFloatType,
+    generateMipmaps: true,
+    minFilter: THREE.LinearMipmapLinearFilter,
+    magFilter: THREE.LinearFilter,
+  });
+  private readonly camera = new THREE.CubeCamera(0.1, 10000, this.target);
   private elapsed = 1;
 
   constructor(private readonly dome: THREE.Mesh, scene: THREE.Scene) {

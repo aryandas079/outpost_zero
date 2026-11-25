@@ -6,7 +6,9 @@ import { MultiplayerMenu } from './components/MultiplayerMenu';
 import { MultiplayerLobby } from './components/MultiplayerLobby';
 import { MultiplayerHudOverlay } from './components/MultiplayerHudOverlay';
 import { LoadoutSelection } from './components/LoadoutSelection';
+import { TacticalMapModal } from './components/TacticalMapModal';
 import { OutpostGameEngine } from './game/engine';
+import { nativeBridge } from './utilities/NativeBridge';
 import { GameSettings, HudSnapshot, Loadout, MissionConfig, WEAPON_SPECS, WeaponId } from './game/types';
 import { DEFAULT_GAME_SETTINGS, normalizeGameSettings } from './game/graphicsSettings';
 import { DEFAULT_LOADOUT } from './game/loadout';
@@ -24,7 +26,7 @@ const SETTINGS_STORAGE_KEY = 'outpost-zero-settings-v1';
 const INITIAL_HUD: HudSnapshot = {
   phase: 'title',
   difficulty: 'normal',
-  mapId: 'west',
+  mapId: 'island',
   health: 100,
   maxHealth: 100,
   shield: 50,
@@ -68,6 +70,7 @@ const INITIAL_HUD: HudSnapshot = {
   crosshairSpread: 10.8,
   pointerLocked: false,
   hitMarker: { active: false, crit: false, kill: false, seq: 0, intensity: 0 },
+  damagePops: [],
   damageArc: { active: false, angleRad: 0, intensity: 0 },
   damageFlash: 0,
   screenShakeX: 0,
@@ -146,7 +149,7 @@ export default function App() {
   });
   const [missionConfig, setMissionConfig] = useState<MissionConfig>({
     difficulty: 'normal',
-    mapId: 'west',
+    mapId: 'island',
   });
   const [contextLost, setContextLost] = useState(false);
   const [isMobile, setIsMobile] = useState<boolean>(() => detectTouchMobileDevice());
@@ -411,6 +414,10 @@ export default function App() {
   }, []);
 
   const handleToggleFullscreen = useCallback(() => {
+    if (nativeBridge.isNativeWinUI) {
+      nativeBridge.toggleFullscreen();
+      return;
+    }
     if (window.electronAPI) {
       window.electronAPI.toggleFullscreen();
       return;
@@ -420,6 +427,19 @@ export default function App() {
     } else {
       void lockLandscapeOrientation();
     }
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'F8' && !e.repeat) {
+        setSettings((prev) => ({ ...prev, showPerfOverlay: !prev.showPerfOverlay }));
+      } else if (e.code === 'F11' && !e.repeat && nativeBridge.isNativeWinUI) {
+        e.preventDefault();
+        nativeBridge.toggleFullscreen();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
   const handleSelectWeapon = useCallback((id: WeaponId) => {
@@ -500,7 +520,7 @@ export default function App() {
         </div>
       )}
 
-      {/* Sectioned Main Menu Command Center: Solo Mission, Multiplayer, Armory, Settings, Intel */}
+      {/* Sectioned Main Menu Command Center: Home, Play, Operators, Armory, Settings */}
       {hud.phase === 'title' && multiplayerFlow === 'none' && (
         <TitleOverlay
           bestScore={hud.bestScore}
@@ -508,7 +528,7 @@ export default function App() {
           initialDifficulty={missionConfig.difficulty}
           initialMap={missionConfig.mapId}
           initialLoadout={missionConfig.loadout}
-          initialSection={parseRoomFromUrl() ? 'multiplayer' : 'solo'}
+          initialSection={parseRoomFromUrl() ? 'multiplayer' : 'home'}
           onStartMission={handleStartMission}
           onSensitivityChange={handleSensitivityChange}
           onToggleMute={handleToggleMute}
@@ -574,11 +594,13 @@ export default function App() {
         <>
           <GameHud controls={settings.controls}
             hud={hud}
+            settings={{ ...settings, muted: hud.muted }}
             muted={hud.muted}
             isMobile={isMobile}
             onPause={handlePause}
             onToggleMute={handleToggleMute}
             onToggleFullscreen={handleToggleFullscreen}
+            onToggleMap={() => engineRef.current?.toggleTacticalMap()}
             onSelectWeapon={handleSelectWeapon}
             onReload={handleReload}
             onThrowGrenade={() => engineRef.current?.throwGrenade()}
@@ -586,6 +608,11 @@ export default function App() {
             onInspectHold={handleInspectHold}
             onToggleCrouch={handleToggleCrouch}
             onToggleScopeZoom={handleToggleScopeZoom}
+            onInteractLoot={() => engineRef.current?.interactLoot()}
+            onUseArmorPlate={() => engineRef.current?.useArmorPlate()}
+            onUseMedkit={() => engineRef.current?.useMedkit()}
+            onToggleInventory={() => engineRef.current?.toggleInventory()}
+            onCycleSpectator={() => engineRef.current?.cycleSpectatorTarget()}
             onTouchMove={handleTouchMove}
             onTouchLook={handleTouchLook}
             onTouchFire={handleTouchFire}
@@ -597,6 +624,14 @@ export default function App() {
             <MultiplayerHudOverlay
               multiplayer={hud.multiplayer}
               localPlayerId={networkManagerRef.current?.localPlayerId ?? ''}
+            />
+          )}
+          {hud.tacticalMapOpen && (
+            <TacticalMapModal
+              hud={hud}
+              onClose={() => engineRef.current?.closeTacticalMap()}
+              onSetWaypoint={(x, z) => engineRef.current?.setWaypoint(x, z)}
+              onClearWaypoint={() => engineRef.current?.clearWaypoint()}
             />
           )}
         </>
@@ -614,6 +649,8 @@ export default function App() {
           onSensitivityChange={handleSensitivityChange}
           onToggleMute={handleToggleMute}
           onSettingsChange={handleSettingsChange}
+          onEnterSpectator={() => engineRef.current?.enterSpectatorMode()}
+          onExitApp={() => nativeBridge.exitApplication()}
         />
       )}
 

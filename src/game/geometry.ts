@@ -131,9 +131,9 @@ export function batchDecoration(
 /** Call after physics extraction. Detached ray targets retain their world matrices. */
 export function optimizeStaticArena(
   root: THREE.Object3D,
-  cullingRoots: THREE.Object3D[],
-  animatedRoots: Set<THREE.Object3D>,
-  ownedGeometries: THREE.BufferGeometry[],
+  cullingRoots: THREE.Object3D[] = [],
+  animatedRoots: Set<THREE.Object3D> = new Set(),
+  ownedGeometries: THREE.BufferGeometry[] = [],
 ) {
   root.updateMatrixWorld(true);
   const boundaries = new Set(cullingRoots);

@@ -101,8 +101,11 @@ export class PhysicsWorld {
   public readonly bodies: StaticPhysicsBody[] = [];
   public readonly ramps: RampSurface[];
   public readonly bounds: ArenaBounds;
+  private readonly terrainHeightAt?: (x: number, z: number) => number;
+  private readonly terrainNormalAt?: (x: number, z: number, out: THREE.Vector3) => void;
+  private readonly _tmpTerrainNormal = new THREE.Vector3(0, 1, 0);
 
-  private readonly cellSize = 6.0;
+  private readonly cellSize: number;
   private readonly gridMinX: number;
   private readonly gridMinZ: number;
   private readonly gridCols: number;
@@ -117,6 +120,11 @@ export class PhysicsWorld {
   constructor(arena: ArenaData) {
     this.ramps = arena.ramps;
     this.bounds = arena.bounds;
+    this.terrainHeightAt = arena.terrainHeightAt;
+    this.terrainNormalAt = arena.terrainNormalAt;
+
+    const maxSpan = Math.max(arena.bounds.maxX - arena.bounds.minX, arena.bounds.maxZ - arena.bounds.minZ);
+    this.cellSize = maxSpan > 400 ? Math.ceil(maxSpan / 160) : 6.0;
 
     const pad = 6;
     this.gridMinX = Math.floor((arena.bounds.minX - pad) / this.cellSize) * this.cellSize;
@@ -208,7 +216,7 @@ export class PhysicsWorld {
 
     const props = SURFACE_PROPS[surface];
     const id = this.bodies.length;
-    const isStepable = maxY <= 0.34 && minY <= 0.12;
+    const isStepable = (maxY <= 0.34 && minY <= 0.12) || sy <= 0.34;
     const isThickWall = sy >= 2.1 && Math.max(sx, sz) >= 1.8 && Math.min(sx, sz) >= 0.35;
 
     this.bodies.push({
@@ -276,7 +284,7 @@ export class PhysicsWorld {
     const minZ = box.min.z;
     const maxZ = box.max.z;
 
-    // Ignore distant decorative scenery completely outside playable town perimeter
+    // Ignore distant decorative scenery completely outside playable perimeter
     if (maxX < bMinX || minX > bMaxX || maxZ < bMinZ || minZ > bMaxZ) return;
 
     const sx = maxX - minX;
@@ -287,8 +295,9 @@ export class PhysicsWorld {
     if (sy < 0.11 || (sx < 0.14 && sz < 0.14)) return;
     if (sx > 40 && sz > 40) return;
 
-    // Skip decorative pieces strictly higher than reachable jump/head clearance (chimney finials, high gables > 11m)
-    if (minY > 10.5) return;
+    // Skip decorative pieces strictly higher than reachable jump/head clearance above local terrain
+    const localGroundY = this.terrainHeightAt ? this.terrainHeightAt(0.5 * (minX + maxX), 0.5 * (minZ + maxZ)) : 0;
+    if (minY - localGroundY > 10.5) return;
 
     // Deduplicate against already-registered explicit architectural colliders
     if (this.isCoveredByExistingBody(minX, maxX, minY, maxY, minZ, maxZ)) return;
@@ -333,7 +342,7 @@ export class PhysicsWorld {
 
   /**
    * Evaluates supporting ground elevation & analytical normal under a cylinder footprint
-   * across both sloped ramps and solid mesh tops.
+   * across continuous 3D terrain heightfields, sloped ramps, and solid mesh tops.
    */
   public sampleGroundAt(
     x: number,
@@ -343,11 +352,18 @@ export class PhysicsWorld {
     stepHeight: number,
     outNormal?: THREE.Vector3,
   ): { y: number; surface: PhysicsSurface } {
-    let groundY = 0;
+    let groundY = this.terrainHeightAt ? this.terrainHeightAt(x, z) : 0;
     let surface: PhysicsSurface = 'dirt';
     let nx = 0;
     let ny = 1;
     let nz = 0;
+
+    if (this.terrainNormalAt) {
+      this.terrainNormalAt(x, z, this._tmpTerrainNormal);
+      nx = this._tmpTerrainNormal.x;
+      ny = this._tmpTerrainNormal.y;
+      nz = this._tmpTerrainNormal.z;
+    }
 
     // 1. Check analytical sloped ramps (staircases / boardwalk ramps)
     for (let i = 0; i < this.ramps.length; i++) {
@@ -609,6 +625,9 @@ export class PhysicsWorld {
       body.groundNormal,
     );
 
+    const slopeFollowLimit = Math.max(0.42, body.stepHeight * 1.25);
+    const downhillGap = body.position.y - ground.y;
+
     if (body.position.y <= ground.y) {
       body.position.y = ground.y;
       body.velocity.y = 0;
@@ -617,13 +636,32 @@ export class PhysicsWorld {
       if (!wasGrounded && preLandingDownSpeed > 0.5) {
         body.landingSpeed = preLandingDownSpeed;
       }
+    } else if (
+      wasGrounded &&
+      body.velocity.y <= 0 &&
+      downhillGap <= slopeFollowLimit &&
+      body.groundNormal.y >= 0.38
+    ) {
+      // Smoothly snap capsule to downward terrain slopes without going micro-airborne & thudding
+      body.position.y = ground.y;
+      body.velocity.y = 0;
+      body.grounded = true;
+      body.groundSurface = ground.surface;
     } else {
       body.grounded = false;
       body.groundNormal.set(0, 1, 0);
     }
 
-    // 5. Final safety constraint pass after vertical step-up (prevents clipping into doorway lintels on porch entry)
+    // 5. Final safety constraint pass after vertical step-up (prevents clipping into doorway lintels or under terrain)
     this.resolveCapsuleHorizontal(body.position, body.radius, body.height, body.stepHeight, body.velocity);
+    if (this.terrainHeightAt) {
+      const floorY = this.terrainHeightAt(body.position.x, body.position.z);
+      if (body.position.y < floorY) {
+        body.position.y = floorY;
+        if (body.velocity.y < 0) body.velocity.y = 0;
+        body.grounded = true;
+      }
+    }
   }
 
   /**
