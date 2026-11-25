@@ -1,6 +1,6 @@
 # Outpost Zero
 
-A browser-based 3D tactical first-person shooter and combat simulator built with Three.js, React, and Tailwind CSS. The game features real-time procedural weapon systems, wave-based tactical combat, serverless peer-to-peer multiplayer, synthesized audio with dynamic range compression, responsive desktop and mobile controls, and high-framerate rendering optimizations.
+A browser-based 3D tactical first-person shooter and battle royale built with Three.js, React, and Tailwind CSS. The game features real-time procedural weapon systems, wave-based tactical combat, serverless peer-to-peer multiplayer, synthesized audio with dynamic range compression, responsive desktop and mobile controls, and high-framerate rendering optimizations.
 
 Live Demo: https://aryandas079.github.io/outpost_zero/
 
