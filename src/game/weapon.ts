@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { craftedBox as baseCraftedBox, batchDecoration } from './geometry';
 import { buildArmoryWeapon } from './weaponModels';
-import { buildOperatorHands } from './operatorModels';
+import { buildOperatorHands, buildThrowableHands, buildMeleeHands } from './operatorModels';
 import { buildThrowable } from './ordnanceModels';
 import { weaponDecal } from './modelDecals';
 import { ProceduralTextures } from './textures';
@@ -280,14 +280,15 @@ export class FirstPersonWeaponRig {
     );
 
     // =========================================================================
-    // 1. M4A1 CARBINE + HOLOGRAPHIC SIGHT & BACKUP IRONS
+    // 1. M4A1 CARBINE + SUPPRESSOR + BOXY EOTECH HOLOGRAPHIC SIGHT (64055fb6)
     // =========================================================================
     this.carbineGroup = new THREE.Group();
-    const marking=weaponDecal(textures,0,.12,.013,this.geometries,this.materials);
-    marking.rotation.y=-Math.PI/2;marking.position.set(-.041,-.012,.026);
+    const marking = weaponDecal(textures, 0, 0.12, 0.013, this.geometries, this.materials);
+    marking.rotation.y = -Math.PI / 2;
+    marking.position.set(-0.041, -0.012, 0.026);
     this.carbineGroup.add(marking);
 
-    // Sculpted beveled multi-faceted FDE upper receiver
+    // Sculpted beveled matte charcoal-black anodized M4A1 upper receiver
     const receiverShape = new THREE.Shape();
     receiverShape.moveTo(-0.032, -0.028);
     receiverShape.lineTo(0.032, -0.028);
@@ -305,31 +306,31 @@ export class FirstPersonWeaponRig {
         bevelEnabled: true,
         bevelThickness: 0.0045,
         bevelSize: 0.0035,
-        bevelSegments: 2,
+        bevelSegments: 1,
       }),
     );
     receiverGeo.translate(0, 0, -0.21);
     scaleExtrudeUVs(receiverGeo, 2.8);
-    const upperReceiver = new THREE.Mesh(receiverGeo, fdeCerakoteMat);
+    const upperReceiver = new THREE.Mesh(receiverGeo, anodizedBlackMat);
     upperReceiver.position.set(0, 0.004, 0.045);
     this.carbineGroup.add(upperReceiver);
 
     // Lower receiver chassis with flared magwell & matte steel trim
-    const lowerReceiver = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.052, 0.34)), fdeCerakoteMat);
+    const lowerReceiver = new THREE.Mesh(trackGeo(craftedBox(0.056, 0.052, 0.34)), anodizedBlackMat);
     lowerReceiver.position.set(0, -0.04, 0.03);
     this.carbineGroup.add(lowerReceiver);
 
-    const magWell = new THREE.Mesh(trackGeo(craftedBox(0.062, 0.048, 0.095)), anodizedBlackMat);
+    const magWell = new THREE.Mesh(trackGeo(craftedBox(0.062, 0.048, 0.095)), mattePolymerMat);
     magWell.position.set(0, -0.056, -0.088);
     this.carbineGroup.add(magWell);
 
     // Rear buffer tube & tactical adjustable crane buttstock extending into shoulder
-    const bufferTube = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.022, 0.023, 0.24, 14)), anodizedBlackMat);
+    const bufferTube = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.022, 0.023, 0.24, 10)), anodizedBlackMat);
     bufferTube.rotation.x = Math.PI / 2;
     bufferTube.position.set(0, 0.012, 0.36);
     this.carbineGroup.add(bufferTube);
 
-    const rearStock = new THREE.Mesh(trackGeo(craftedBox(0.052, 0.082, 0.2)), fdeCerakoteMat);
+    const rearStock = new THREE.Mesh(trackGeo(craftedBox(0.052, 0.082, 0.2)), mattePolymerMat);
     rearStock.position.set(0, -0.012, 0.39);
     rearStock.rotation.x = -0.06;
     this.carbineGroup.add(rearStock);
@@ -371,7 +372,7 @@ export class FirstPersonWeaponRig {
     this.carbineBolt.add(boltHandle);
     this.carbineGroup.add(this.carbineBolt);
 
-    const brassDeflector = new THREE.Mesh(trackGeo(craftedBox(0.018, 0.022, 0.024)), fdeCerakoteMat);
+    const brassDeflector = new THREE.Mesh(trackGeo(craftedBox(0.018, 0.022, 0.024)), anodizedBlackMat);
     brassDeflector.position.set(0.036, 0.016, 0.026);
     brassDeflector.rotation.y = 0.45;
     this.carbineGroup.add(brassDeflector);
@@ -444,16 +445,16 @@ export class FirstPersonWeaponRig {
         bevelEnabled: true,
         bevelThickness: 0.003,
         bevelSize: 0.0025,
-        bevelSegments: 2,
+        bevelSegments: 1,
       }),
     );
     handguardGeo.translate(0, 0, -0.155);
     scaleExtrudeUVs(handguardGeo, 2.8);
-    const handguard = new THREE.Mesh(handguardGeo, fdeCerakoteMat);
+    const handguard = new THREE.Mesh(handguardGeo, anodizedBlackMat);
     handguard.position.set(0, 0.008, -0.32);
     this.carbineGroup.add(handguard);
 
-    // Dark recessed M-LOK ventilation slots along both sides of handguard
+    // Side cooling vent slots + Quad-rail teeth along black M4A1 handguard
     const ventSlotGeo = trackGeo(craftedBox(0.004, 0.009, 0.044));
     for (let i = 0; i < 4; i++) {
       const vz = -0.215 - i * 0.062;
@@ -487,7 +488,7 @@ export class FirstPersonWeaponRig {
     buisGroup.position.set(0, 0.062, 0.145);
     this.carbineGroup.add(buisGroup);
 
-    const buisBase = new THREE.Mesh(trackGeo(craftedBox(0.042, 0.018, 0.062)), fdeCerakoteMat);
+    const buisBase = new THREE.Mesh(trackGeo(craftedBox(0.042, 0.018, 0.062)), anodizedBlackMat);
     buisBase.position.set(0, 0.006, 0);
     buisGroup.add(buisBase);
 
@@ -620,8 +621,8 @@ export class FirstPersonWeaponRig {
     holoReticleMesh.position.set(0, 0.092, 0.006);
     holoGroup.add(holoReticleMesh);
 
-    // Side-mounted AN/PEQ-15 Tactical Laser Illuminator Module + top-rail pressure switch & cable
-    const peqBody = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.024, 0.088)), fdeCerakoteMat);
+    // Side-mounted AN/PEQ-15 Tactical Laser Illuminator Module (Matte Black matching M4A1)
+    const peqBody = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.024, 0.088)), mattePolymerMat);
     peqBody.position.set(0.024, 0.038, -0.41);
     this.carbineGroup.add(peqBody);
     const peqEmitter = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.006, 0.006, 0.012, 10)), bluedBarrelMat);
@@ -642,36 +643,33 @@ export class FirstPersonWeaponRig {
     qdSlingSocket.position.set(-0.036, 0.006, -0.178);
     this.carbineGroup.add(qdSlingSocket);
 
-    // Lathe-turned Heavy Steel Barrel + Multi-Port Tactical Compensator Muzzle Brake
+    // Tactical Matte-Black Sound Suppressor + Folding Front Sight Post (64055fb6)
     const barrelPts = [
-      new THREE.Vector2(0.0125, 0.0),
-      new THREE.Vector2(0.0125, 0.13),
-      new THREE.Vector2(0.016, 0.145),
-      new THREE.Vector2(0.016, 0.175),
-      new THREE.Vector2(0.019, 0.185),
-      new THREE.Vector2(0.019, 0.245),
-      new THREE.Vector2(0.0145, 0.255),
-      new THREE.Vector2(0.0095, 0.255),
+      new THREE.Vector2(0.012, 0.0),
+      new THREE.Vector2(0.012, 0.085),
+      new THREE.Vector2(0.021, 0.095),
+      new THREE.Vector2(0.021, 0.255),
+      new THREE.Vector2(0.016, 0.262),
+      new THREE.Vector2(0.0095, 0.262),
     ];
-    const barrelGeo = trackGeo(new THREE.LatheGeometry(barrelPts, 16));
+    const barrelGeo = trackGeo(new THREE.LatheGeometry(barrelPts, 10));
     barrelGeo.rotateX(-Math.PI / 2);
-    const barrel = new THREE.Mesh(barrelGeo, bluedBarrelMat);
+    const barrel = new THREE.Mesh(barrelGeo, anodizedBlackMat);
     barrel.position.set(0, 0.008, -0.46);
     this.carbineGroup.add(barrel);
 
-    // Machined side compensator gas ports
-    for (const pz of [-0.665, -0.688]) {
-      const port = new THREE.Mesh(trackGeo(craftedBox(0.04, 0.01, 0.011)), rubberMat);
-      port.position.set(0, 0.008, pz);
-      this.carbineGroup.add(port);
-    }
+    // Suppressor baffle collar seam ring
+    const supRing = new THREE.Mesh(trackGeo(new THREE.CylinderGeometry(0.0222, 0.0222, 0.012, 10)), wornGunmetalMat);
+    supRing.rotation.x = Math.PI / 2;
+    supRing.position.set(0, 0.008, -0.575);
+    this.carbineGroup.add(supRing);
 
-    // Low-profile folded front iron sight post
-    const frontSightBase = new THREE.Mesh(trackGeo(craftedBox(0.022, 0.014, 0.034)), anodizedBlackMat);
-    frontSightBase.position.set(0, 0.064, -0.465);
+    // Front backup flip-up iron post
+    const frontSightBase = new THREE.Mesh(trackGeo(craftedBox(0.022, 0.018, 0.032)), anodizedBlackMat);
+    frontSightBase.position.set(0, 0.066, -0.465);
     this.carbineGroup.add(frontSightBase);
 
-    // Ergonomic Stippled Pistol Grip & Curved Ribbed Tactical PMAG with Brass Cartridge Window
+    // Ergonomic Stippled Pistol Grip & Curved Matte Dark Steel STANAG Magazine
     const pistolGrip = new THREE.Mesh(trackGeo(craftedBox(0.038, 0.132, 0.054)), mattePolymerMat);
     pistolGrip.position.set(0, -0.106, 0.138);
     pistolGrip.rotation.x = 0.28;
@@ -699,7 +697,7 @@ export class FirstPersonWeaponRig {
     magGeo.rotateY(Math.PI / 2);
     magGeo.translate(-0.016, 0, 0);
     scaleExtrudeUVs(magGeo, 3.0);
-    this.carbineMag = new THREE.Mesh(magGeo, fdeCerakoteMat);
+    this.carbineMag = new THREE.Mesh(magGeo, anodizedBlackMat);
     this.carbineMag.position.set(0, -0.056, -0.088);
     // Magazine floorplate & recessed cartridge window showing stacked brass rounds
     const magFloorplate = new THREE.Mesh(trackGeo(craftedBox(0.04, 0.014, 0.066)), rubberMat);
@@ -1014,17 +1012,63 @@ export class FirstPersonWeaponRig {
     });
   }
 
+  private meleeGroup?: THREE.Group;
+  private meleeLeft?: THREE.Group;
+  private meleeRight?: THREE.Group;
+  private meleeActive = false;
+  private meleePunchTimer = 0;
+  private meleePunchHand = 1;
+
   private buildEquipmentModel(id: WeaponId): THREE.Group {
     const group = buildArmoryWeapon(id, this.textures, this.geometries, this.materials);
     const hands = buildOperatorHands(id, this.textures, this.geometries, this.materials);
     group.add(hands.left, hands.right);
     group.userData.supportHand = hands.left;
-    const animated = [hands.left, hands.right, group.getObjectByName('slide')].filter(Boolean) as THREE.Object3D[];
-    batchDecoration(group, new Set(), new Set(animated), this.geometries, true);
+    const animNames = [
+      'slide',
+      'mag',
+      'chargingHandle',
+      'pump',
+      'topCover',
+      'ammoBelt',
+      'warhead',
+      'drum',
+      'drumRound',
+    ];
+    const animated = [
+      hands.left,
+      hands.right,
+      ...animNames.map((n) => group.getObjectByName(n)),
+    ].filter(Boolean) as THREE.Object3D[];
+    const protectedSet = new Set<THREE.Object3D>(animated);
+    batchDecoration(group, protectedSet, protectedSet, this.geometries, true);
     return group;
   }
 
+  public setMeleeActive(active: boolean) {
+    this.meleeActive = active;
+    if (active && !this.meleeGroup) {
+      this.meleeGroup = new THREE.Group();
+      this.meleeGroup.name = 'bare-hands-melee-rig';
+      const hands = buildMeleeHands(this.textures, this.geometries, this.materials);
+      this.meleeLeft = hands.left;
+      this.meleeRight = hands.right;
+      this.meleeGroup.add(hands.left, hands.right);
+      this.root.add(this.meleeGroup);
+    }
+    if (this.meleeGroup) this.meleeGroup.visible = active && !this.scopeHidden && this.throwTimer <= 0;
+    this.weaponPivot.visible = !active && !this.scopeHidden && this.throwTimer <= 0;
+  }
+
+  public triggerMeleePunch() {
+    this.meleePunchTimer = 0.34;
+    this.meleePunchHand = -this.meleePunchHand;
+    this.recoilVelPitch -= 2.2;
+  }
+
   public setWeapon(id: WeaponId) {
+    this.meleeActive = false;
+    if (this.meleeGroup) this.meleeGroup.visible = false;
     if (this.equippedWeapon === id) return;
     this.equippedWeapon = id;
     this.activeWeapon = id === 'railpistol' ? 'railpistol' : 'carbine';
@@ -1043,7 +1087,7 @@ export class FirstPersonWeaponRig {
     this.muzzleFlashGroup.position.set(
       0,
       id === 'carbine' ? 0.012 : 0.014,
-      id === 'carbine' ? -0.74 : id === 'railpistol' ? -0.85 : ['usp','deagle','glock'].includes(id) ? -0.48 : id === 'rpg' ? -1.25 : id === 'grenadelauncher' ? -0.82 : -0.93,
+      id === 'carbine' ? -0.74 : id === 'railpistol' ? -0.85 : ['usp', 'deagle', 'glock'].includes(id) ? -0.48 : id === 'rpg' ? -1.25 : id === 'grenadelauncher' ? -0.82 : -0.93,
     );
     this.muzzleLight.color.setHex(id === 'carbine' ? 0xff9d3b : 0xffb357);
     if (equipment?.userData.flashOrigin) {
@@ -1054,14 +1098,21 @@ export class FirstPersonWeaponRig {
   public triggerGrenadeThrow(id: GrenadeId) {
     if (!this.throwableModels.has(id)) {
       const group = new THREE.Group();
-      const hands = buildOperatorHands('glock', this.textures, this.geometries, this.materials);
-      hands.left.position.set(-0.04,0.052,-0.025);
-      const grenade = buildThrowable(id,this.textures,this.geometries,this.materials);
-      grenade.position.set(0,-0.072,-0.226);
-      group.add(hands.left,hands.right,grenade);
-      group.userData.pinHand=hands.left;
-      group.userData.grenade=grenade;
-      this.throwableModels.set(id,group); this.root.add(group);
+      const hands = buildThrowableHands(id, this.textures, this.geometries, this.materials);
+      const grenade = buildThrowable(id, this.textures, this.geometries, this.materials);
+      if (id === 'molotov') {
+        grenade.position.set(0.015, -0.055, -0.228);
+        grenade.rotation.set(0.08, -0.15, 0.34);
+      } else {
+        grenade.position.set(0.008, -0.072, -0.228);
+        grenade.rotation.set(0.04, 0.14, 0.14);
+      }
+      group.add(hands.left, hands.right, grenade);
+      group.userData.pinHand = hands.left;
+      group.userData.grenade = grenade;
+      group.userData.grenadeId = id;
+      this.throwableModels.set(id, group);
+      this.root.add(group);
     }
     if(this.activeThrowable) this.activeThrowable.visible=false;
     this.activeThrowable=this.throwableModels.get(id)!;
@@ -1171,19 +1222,63 @@ export class FirstPersonWeaponRig {
     reloadEmpty = false,
     inspecting = false,
   ) {
-    this.throwTimer=Math.max(0,this.throwTimer-dt);
-    const throwing=this.throwTimer>0;
-    this.weaponPivot.visible=!throwing && !this.scopeHidden;
-    if(this.activeThrowable) {
-      this.activeThrowable.visible=throwing;
-      const t=1-this.throwTimer/0.68;
-      const pin=this.activeThrowable.userData.pinHand as THREE.Group;
-      pin.position.x=-0.04-Math.min(1,t*3)*0.055;
-      pin.position.y=0.052+Math.sin(t*Math.PI)*0.045;
-      const release=Math.max(0,(t-.48)/.52);
-      this.activeThrowable.position.set(.15,-.12+Math.sin(release*Math.PI)*.16,-.15-release*.2);
-      this.activeThrowable.rotation.x=-release*1.25;
-      (this.activeThrowable.userData.grenade as THREE.Group).visible=t<.56;
+    this.throwTimer = Math.max(0, this.throwTimer - dt);
+    this.meleePunchTimer = Math.max(0, this.meleePunchTimer - dt);
+    const throwing = this.throwTimer > 0;
+    this.weaponPivot.visible = !throwing && !this.scopeHidden && !this.meleeActive;
+    if (this.meleeGroup) {
+      this.meleeGroup.visible = this.meleeActive && !throwing && !this.scopeHidden;
+      if (this.meleeGroup.visible && this.meleeLeft && this.meleeRight) {
+        const sprintDip = this.sprintBlend * 0.045;
+        const bobX = Math.sin(this.swayPhase) * 0.008 * moveSpeedRatio;
+        const bobY = Math.abs(Math.cos(this.swayPhase)) * 0.008 * moveSpeedRatio;
+        this.meleeGroup.position.set(bobX, -0.015 - bobY - sprintDip, 0);
+        this.meleeGroup.rotation.set(-0.08 * this.sprintBlend, 0.06 * this.sprintBlend, 0);
+
+        const punchK = this.meleePunchTimer > 0 ? Math.sin((1 - this.meleePunchTimer / 0.34) * Math.PI) : 0;
+        const leadIsLeft = this.meleePunchHand < 0;
+        this.meleeLeft.position.set(
+          leadIsLeft ? punchK * 0.075 : -punchK * 0.018,
+          leadIsLeft ? punchK * 0.025 : -punchK * 0.015,
+          leadIsLeft ? -punchK * 0.24 : punchK * 0.04,
+        );
+        this.meleeLeft.rotation.set(leadIsLeft ? punchK * 0.16 : 0, leadIsLeft ? -punchK * 0.22 : 0, leadIsLeft ? -punchK * 0.35 : 0);
+
+        this.meleeRight.position.set(
+          !leadIsLeft ? -punchK * 0.085 : punchK * 0.02,
+          !leadIsLeft ? punchK * 0.03 : -punchK * 0.015,
+          !leadIsLeft ? -punchK * 0.26 : punchK * 0.045,
+        );
+        this.meleeRight.rotation.set(!leadIsLeft ? punchK * 0.18 : 0, !leadIsLeft ? punchK * 0.24 : 0, !leadIsLeft ? punchK * 0.38 : 0);
+      }
+    }
+    if (this.activeThrowable) {
+      this.activeThrowable.visible = throwing;
+      const t = 1 - this.throwTimer / 0.68;
+      const pin = this.activeThrowable.userData.pinHand as THREE.Group;
+      const grenade = this.activeThrowable.userData.grenade as THREE.Group;
+      const throwId = this.activeThrowable.userData.grenadeId as GrenadeId | undefined;
+      const pullRing = grenade.userData.pullRing as THREE.Object3D | undefined;
+      const flameGroup = grenade.userData.flameGroup as THREE.Object3D | undefined;
+      if (throwId === 'molotov') {
+        pin.position.set(-Math.min(1, t * 2) * 0.045, -Math.sin(t * Math.PI) * 0.03, 0);
+      } else {
+        const pull = Math.min(1, Math.max(0, (t - 0.05) * 2.8));
+        pin.position.set(-pull * 0.058, Math.sin(t * Math.PI) * 0.032, 0);
+        if (pullRing) {
+          pullRing.position.set(-0.016 - pull * 0.042, 0.051 + Math.sin(pull * Math.PI) * 0.014, 0.01);
+        }
+      }
+      if (flameGroup) {
+        const now = performance.now();
+        const flicker = 0.88 + 0.24 * Math.abs(Math.sin(now * 0.025));
+        flameGroup.scale.set(flicker, 0.9 + flicker * 0.26, flicker);
+        flameGroup.rotation.z = Math.sin(now * 0.031) * 0.14;
+      }
+      const release = Math.max(0, (t - 0.48) / 0.52);
+      this.activeThrowable.position.set(0.035 - release * 0.02, -0.04 + Math.sin(release * Math.PI) * 0.14, -0.06 - release * 0.22);
+      this.activeThrowable.rotation.x = -release * 1.15;
+      grenade.visible = t < 0.56;
     }
     // 1. Muzzle flash decay & flicker
     if (this.muzzleFlashTimer > 0) {
@@ -1313,8 +1408,22 @@ export class FirstPersonWeaponRig {
     let armRotY = 0;
     let armRotZ = 0;
 
+    let slidePullZ = this.boltKick * 0.025;
+    let chOffsetZ = 0;
+    let chOffsetY = 0;
+    let pumpOffsetZ = this.equippedWeapon === 'shotgun' && this.boltKick > 0.05 ? Math.sin(this.boltKick * Math.PI) * 0.075 : 0;
+    let lmgCoverRotX = 0;
+    let lmgBeltOffsetY = 0;
+    let rpgWarheadY = 0;
+    let rpgWarheadZ = 0;
+    let rpgWarheadVisible = ammoRatio > 0 || !reloading;
+    let glDrumRotZ = 0;
+    let glDrumRoundVisible = true;
+    let glHandRoundVisible = false;
+
     if (reloading) {
-      if (this.activeWeapon === 'carbine') {
+      const ew = this.equippedWeapon;
+      if (ew === 'carbine') {
         if (!reloadEmpty) {
           // ===================================================================
           // PRIMARY CARBINE: FAST TACTICAL RELOAD (PARTIAL MAG, ROUND CHAMBERED)
@@ -1475,10 +1584,197 @@ export class FirstPersonWeaponRig {
           reloadRotX += 0.048 * magSlam - 0.052 * boltSlam;
           reloadRotZ += 0.045 * ejectFlick + 0.036 * magSlam - 0.062 * boltSlam;
         }
-      } else {
-        // K-9 Precision Sniper: tactical vs. empty bolt-action magazine reload
+      } else if (ew === 'glock' || ew === 'usp' || ew === 'deagle') {
+        // Pistols: cant sidearm up-inward, drop mag out grip, seat fresh mag, thumb-release locked slide
         const env = Math.sin(p * Math.PI);
-        reloadShiftY = -0.046 * env;
+        reloadShiftX = -0.03 * env;
+        reloadShiftY = -0.022 * env;
+        reloadRotX = 0.22 * env;
+        reloadRotY = 0.28 * env;
+        reloadRotZ = 0.44 * env;
+
+        if (reloadEmpty && p < 0.78) {
+          slidePullZ = 0.026;
+        } else if (reloadEmpty && p < 0.88) {
+          const releaseK = this.smoothRange(p, 0.78, 0.88);
+          slidePullZ = THREE.MathUtils.lerp(0.026, 0, releaseK * releaseK);
+        }
+
+        if (p < 0.36) {
+          const dropK = this.smoothRange(p, 0.06, 0.34);
+          magOffsetY = -0.22 * dropK * dropK;
+          magOffsetZ = 0.04 * dropK;
+          armOffsetY = -0.18 * dropK;
+          armOffsetZ = 0.08 * dropK;
+        } else if (p < 0.7) {
+          const insertK = this.smoothRange(p, 0.36, 0.65);
+          const inv = 1 - insertK;
+          magOffsetY = -0.22 * inv;
+          magOffsetZ = 0.035 * inv;
+          armOffsetY = -0.18 * inv;
+          armOffsetZ = 0.08 * inv;
+        } else {
+          const thumbSnap = this.bellPulse(p, 0.7, 0.79, 0.92);
+          armOffsetY = 0.032 * thumbSnap;
+          armOffsetZ = -0.018 * thumbSnap;
+          reloadShiftY += 0.015 * this.bellPulse(p, 0.76, 0.82, 0.9);
+          reloadRotX += 0.04 * this.bellPulse(p, 0.76, 0.82, 0.9);
+        }
+      } else if (ew === 'smg') {
+        // HK MP5: roll receiver left, swap curved stick mag, perform classic forward HK Slap on empty
+        const env = Math.sin(p * Math.PI);
+        reloadShiftX = -0.03 * env;
+        reloadShiftY = -0.038 * env;
+        reloadRotX = 0.16 * env;
+        reloadRotZ = 0.44 * env;
+
+        const magEnd = reloadEmpty ? 0.64 : 0.86;
+        if (p > 0.1 && p < magEnd) {
+          const phase = (p - 0.1) / (magEnd - 0.1);
+          const curve = Math.sin(phase * Math.PI);
+          magOffsetY = -0.22 * curve;
+          armOffsetY = -0.16 * curve;
+          armOffsetZ = 0.12 * curve;
+          armOffsetX = 0.035 * curve;
+        }
+        if (reloadEmpty) {
+          if (p < 0.72) {
+            chOffsetZ = 0.048;
+            chOffsetY = 0.008;
+          } else if (p < 0.9) {
+            const slapK = this.bellPulse(p, 0.66, 0.76, 0.88);
+            const closeK = this.smoothRange(p, 0.74, 0.84);
+            chOffsetZ = THREE.MathUtils.lerp(0.048, 0, closeK);
+            chOffsetY = THREE.MathUtils.lerp(0.008, 0, closeK);
+            armOffsetY = 0.05 * slapK;
+            armOffsetZ = -0.095 * slapK;
+            reloadRotZ -= 0.12 * slapK;
+          }
+        }
+      } else if (ew === 'machinegun') {
+        // M249 LMG: flip hinged top feed cover UPWARD (-X), swap olive canvas pouch, seat brass belt & slam cover shut
+        const env = Math.sin(p * Math.PI);
+        reloadShiftY = -0.048 * env;
+        reloadRotX = 0.1 * env;
+        reloadRotZ = 0.26 * env;
+
+        if (p < 0.22) {
+          const openK = this.smoothRange(p, 0.06, 0.2);
+          lmgCoverRotX = -0.82 * openK;
+          lmgBeltOffsetY = 0.045 * openK;
+          armOffsetY = 0.09 * openK;
+          armOffsetZ = 0.18 * openK;
+        } else if (p < 0.58) {
+          lmgCoverRotX = -0.82;
+          const boxPhase = (p - 0.22) / 0.36;
+          const boxCurve = Math.sin(boxPhase * Math.PI);
+          magOffsetY = -0.23 * boxCurve;
+          lmgBeltOffsetY = 0.06 * boxCurve;
+          armOffsetY = -0.18 * boxCurve;
+          armOffsetZ = 0.14 * boxCurve;
+          armOffsetX = 0.04 * boxCurve;
+        } else if (p < 0.8) {
+          lmgCoverRotX = -0.82;
+          const beltK = 1 - this.smoothRange(p, 0.58, 0.76);
+          lmgBeltOffsetY = 0.075 * beltK;
+          armOffsetY = 0.04 + 0.05 * beltK;
+          armOffsetZ = 0.16 * beltK;
+        } else {
+          const closeK = this.smoothRange(p, 0.8, 0.92);
+          lmgCoverRotX = -0.82 * (1 - closeK);
+          const slam = this.bellPulse(p, 0.88, 0.92, 0.98);
+          armOffsetY = 0.08 * (1 - closeK);
+          reloadShiftY -= 0.025 * slam;
+          reloadRotX -= 0.06 * slam;
+        }
+      } else if (ew === 'shotgun') {
+        // Pump Shotgun: roll ejection/loading port sideways, feed shells upward, rack pump forend
+        const env = Math.sin(p * Math.PI);
+        reloadShiftY = -0.03 * env;
+        reloadRotX = 0.14 * env;
+        reloadRotZ = -0.58 * env;
+
+        if (p > 0.14 && p < 0.72) {
+          const pulse = Math.abs(Math.sin(((p - 0.14) / 0.58) * Math.PI * 2));
+          magOffsetY = -0.09 * (1 - pulse);
+          armOffsetY = -0.11 * (1 - pulse);
+          armOffsetZ = 0.18;
+          armOffsetX = 0.04;
+        } else if (p >= 0.72) {
+          const pumpPulse = this.bellPulse(p, 0.74, 0.82, 0.94);
+          pumpOffsetZ = pumpPulse * 0.095;
+          armOffsetZ = pumpPulse * 0.095;
+          reloadShiftZ -= 0.02 * pumpPulse;
+        }
+      } else if (ew === 'rpg') {
+        // RPG 7: lift launcher tube skyward & slide fresh PG-7V warhead cleanly into front muzzle
+        const env = Math.sin(p * Math.PI);
+        reloadShiftY = -0.058 * env;
+        reloadRotX = 0.34 * env;
+        reloadRotZ = -0.22 * env;
+
+        if (p < 0.25) {
+          rpgWarheadVisible = false;
+          armOffsetY = -0.16 * this.smoothRange(p, 0.05, 0.25);
+          armOffsetZ = 0.12 * this.smoothRange(p, 0.05, 0.25);
+        } else if (p < 0.82) {
+          rpgWarheadVisible = true;
+          const loadK = this.smoothRange(p, 0.26, 0.74);
+          const inv = 1 - loadK;
+          rpgWarheadZ = -0.34 * inv;
+          rpgWarheadY = -0.12 * inv;
+          armOffsetZ = -0.32 * inv;
+          armOffsetY = -0.12 * inv;
+          const clickBump = this.bellPulse(p, 0.72, 0.77, 0.84);
+          reloadShiftZ += 0.028 * clickBump;
+        } else {
+          rpgWarheadVisible = true;
+          const inv = 1 - this.smoothRange(p, 0.82, 0.98);
+          armOffsetY = -0.04 * inv;
+        }
+      } else if (ew === 'grenadelauncher') {
+        // GL-1 Launcher: swing rotary breech drum LEFT on Z crane, raise left hand w/ olive+brass 40mm round into chamber, snap shut (215fb7dc!)
+        const env = Math.sin(p * Math.PI);
+        reloadShiftX = 0.015 * env;
+        reloadShiftY = 0.015 * env;
+        reloadRotX = 0.08 * env;
+        reloadRotY = 0.18 * env;
+        reloadRotZ = -0.22 * env;
+
+        if (p < 0.22) {
+          const swingK = this.smoothRange(p, 0.04, 0.2);
+          glDrumRotZ = 0.95 * swingK;
+          glDrumRoundVisible = false;
+          glHandRoundVisible = true;
+          armOffsetX = -0.055 * swingK;
+          armOffsetY = 0.03 * swingK;
+          armOffsetZ = 0.26 * swingK;
+          armRotZ = 0.16 * swingK;
+        } else if (p < 0.76) {
+          glDrumRotZ = 0.95;
+          const pushK = this.smoothRange(p, 0.24, 0.66);
+          glHandRoundVisible = p < 0.66;
+          glDrumRoundVisible = p >= 0.62;
+          armOffsetX = THREE.MathUtils.lerp(-0.075, -0.022, pushK);
+          armOffsetY = THREE.MathUtils.lerp(0.02, 0.068, pushK);
+          armOffsetZ = THREE.MathUtils.lerp(0.28, 0.23, pushK);
+          armRotZ = THREE.MathUtils.lerp(0.18, 0.28, pushK);
+        } else {
+          const closeK = this.smoothRange(p, 0.78, 0.92);
+          glDrumRotZ = 0.95 * (1 - closeK);
+          glDrumRoundVisible = true;
+          glHandRoundVisible = false;
+          armOffsetX = -0.022 * (1 - closeK);
+          armOffsetY = 0.05 * (1 - closeK);
+          armOffsetZ = 0.22 * (1 - closeK);
+          armRotZ = 0.2 * (1 - closeK);
+          const latch = this.bellPulse(p, 0.88, 0.92, 0.98);
+          reloadRotZ += 0.07 * latch;
+        }
+      } else {
+        // SCAR 20S DMR & K-9 Precision Rifle: cant weapon, swap box magazine, cycle side bolt handle
+        const env = Math.sin(p * Math.PI);
+        reloadShiftY = -0.044 * env;
         reloadRotX = 0.18 * env;
         reloadRotZ = (reloadEmpty ? 0.5 : 0.4) * env;
 
@@ -1494,6 +1790,7 @@ export class FirstPersonWeaponRig {
         if (reloadEmpty && p > 0.66 && p < 0.92) {
           const boltPulse = this.bellPulse(p, 0.68, 0.77, 0.88);
           railBoltZ = boltPulse * 0.092;
+          chOffsetZ = boltPulse * 0.068;
           reloadRotZ -= 0.09 * boltPulse;
           reloadShiftZ -= 0.016 * boltPulse;
         }
@@ -1582,9 +1879,9 @@ export class FirstPersonWeaponRig {
       inspectRotZ = (poseRZ - this.inspectTiltX * 0.35) * ib;
     }
 
-    // Apply bolt, magazine & articulated left arm transforms
+    // Apply bolt, slide, magazine & weapon-specific animated sub-parts
     this.carbineBolt.position.z = carbineBoltZ;
-    if (this.activeSlide) this.activeSlide.position.z = this.boltKick * 0.024;
+    if (this.activeSlide) this.activeSlide.position.z = slidePullZ;
     this.railBolt.position.z = railBoltZ;
 
     this.carbineMag.position.set(magOffsetX, -0.056 + magOffsetY, -0.088 + magOffsetZ);
@@ -1608,21 +1905,69 @@ export class FirstPersonWeaponRig {
     );
 
     const equipment = this.equipmentModels.get(this.equippedWeapon);
+    if (equipment) {
+      const mag = equipment.getObjectByName('mag');
+      if (mag) {
+        mag.position.set(magOffsetX, magOffsetY, magOffsetZ);
+        mag.rotation.set(magRotX, 0, magRotZ);
+      }
+      const ch = equipment.getObjectByName('chargingHandle');
+      if (ch) ch.position.set(0, chOffsetY, chOffsetZ);
+      const pump = equipment.getObjectByName('pump');
+      if (pump) pump.position.set(0, 0, pumpOffsetZ);
+      const topCover = equipment.getObjectByName('topCover');
+      if (topCover) topCover.rotation.x = lmgCoverRotX;
+      const belt = equipment.getObjectByName('ammoBelt');
+      if (belt) belt.position.set(0, lmgBeltOffsetY, 0);
+      const warhead = equipment.getObjectByName('warhead');
+      if (warhead) {
+        warhead.visible = rpgWarheadVisible;
+        warhead.position.set(0, rpgWarheadY, rpgWarheadZ);
+      }
+      const drum = equipment.getObjectByName('drum');
+      if (drum) drum.rotation.z = glDrumRotZ;
+      const drumRound = equipment.getObjectByName('drumRound');
+      if (drumRound) drumRound.visible = glDrumRoundVisible;
+    }
     const support = equipment?.userData.supportHand as THREE.Group | undefined;
     if (support) {
       support.position.set(armOffsetX, armOffsetY, armOffsetZ);
       support.rotation.set(armRotX, armRotY, armRotZ);
+      const handRound = support.userData.reloadRound as THREE.Object3D | undefined;
+      if (handRound) handRound.visible = glHandRoundVisible;
     }
 
-    // 8. Compose Realistic Camera-Space Tactical Transform (Hip / ADS / Sprint Low-Ready / Crouch Cant / Inspect)
-    const hipPos = ['usp','glock','deagle'].includes(this.equippedWeapon) ? this.hipPosPistol
-      : ['machinegun','rpg'].includes(this.equippedWeapon) ? this.hipPosHeavy
-      : this.activeWeapon === 'carbine' ? this.hipPosCarbine : this.hipPosRail;
-    const adsPos = ['usp', 'glock', 'deagle'].includes(this.equippedWeapon) ? this.adsPosPistol
-      : this.equippedWeapon === 'marksman' ? this.adsPosMarksman
-      : this.equippedWeapon === 'railpistol' ? this.adsPosRail
-      : this.equippedWeapon === 'carbine' ? this.adsPosCarbine
-      : this.equippedWeapon === 'machinegun' ? this.adsPosMarksman : this.adsPosIron;
+    // 8. Compose Custom Camera-Space Stances per Weapon Class (Hip / ADS / Sprint / Crouch / Inspect)
+    const ew = this.equippedWeapon;
+    const isPistol = ew === 'usp' || ew === 'glock' || ew === 'deagle';
+    const baseHip = isPistol
+      ? this.hipPosPistol
+      : ew === 'machinegun' || ew === 'rpg' || ew === 'grenadelauncher'
+        ? this.hipPosHeavy
+        : this.activeWeapon === 'carbine'
+          ? this.hipPosCarbine
+          : this.hipPosRail;
+    const hipPos = baseHip.clone();
+    if (isPistol) {
+      hipPos.y += 0.045;
+      hipPos.x -= 0.018;
+    } else if (ew === 'machinegun' || ew === 'rpg' || ew === 'grenadelauncher') {
+      hipPos.y += 0.062;
+      hipPos.x -= 0.022;
+    }
+    const adsPos = isPistol
+      ? this.adsPosPistol
+      : ew === 'marksman'
+        ? this.adsPosMarksman
+        : ew === 'railpistol'
+          ? this.adsPosRail
+          : ew === 'carbine'
+            ? this.adsPosCarbine
+            : ew === 'machinegun'
+              ? new THREE.Vector3(0, -0.11, -0.15)
+              : ew === 'smg'
+                ? this.adsPosRail
+                : this.adsPosIron;
     const hipRot = this.activeWeapon === 'carbine' ? this.hipRotCarbine : this.hipRotRail;
     const adsRot = this.activeWeapon === 'carbine' ? this.adsRotCarbine : this.adsRotRail;
 

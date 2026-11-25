@@ -1076,12 +1076,26 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
   tacticalGloveColor.anisotropy = aniso;
   const tacticalGloveNormal = heightCanvasToNormalTexture(glvHCanvas, 1.5, aniso, 1, 1);
 
-  // A shared transparent decal atlas avoids stamping repeated text into the metal grain.
-  const [markCanvas,markCtx]=makeCanvas(1024,384);
-  ['M4A1   CAL. 5.56 × 45','17    AUSTRIA    9 × 19','M249   5.56 MM   OZ-0148','RPG-7   40 MM','M67   FRAG','OUTPOST   //   07'].forEach((label,row)=>{
-    markCtx.font='32px monospace';
-    markCtx.fillStyle=row===4?'#c6a45d':'#b2b7b4';
-    markCtx.fillText(label,12,row*64+42);
+  // A shared transparent decal atlas stamps sharp military stencils per weapon/ordnance.
+  const [markCanvas, markCtx] = makeCanvas(1024, 768);
+  const markingsSpec: Array<{ text: string; color: string; font?: string }> = [
+    { text: 'M4A1   CAL. 5.56', color: '#cfd4d0' },
+    { text: 'GLOCK 17   AUSTRIA   9x19', color: '#d8dcd8' },
+    { text: 'M249   5.56 MM   OZ-0148', color: '#cdd2ce' },
+    { text: 'РПГ-7   40 MM', color: '#d8ddd8' },
+    { text: 'M67 FRAG', color: '#e6be4a', font: 'bold 42px monospace' },
+    { text: 'M84 FLASHBANG', color: '#e2e6df', font: 'bold 38px monospace' },
+    { text: 'M18 SMOKE', color: '#eceee6', font: 'bold 44px monospace' },
+    { text: 'SCAR 20S   7.62', color: '#2b2419', font: 'bold 34px monospace' },
+    { text: 'USP 9   9x19 MM', color: '#dce0dc', font: 'bold 34px monospace' },
+    { text: 'HK MP5   CAL. 9MM', color: '#d6dbd6', font: 'bold 34px monospace' },
+    { text: 'DESERT EAGLE   .50 AE', color: '#232629', font: 'bold 34px monospace' },
+    { text: 'GL-1   40MM', color: '#e5e8e2', font: 'bold 36px monospace' },
+  ];
+  markingsSpec.forEach(({ text, color, font }, row) => {
+    markCtx.font = font ?? 'bold 32px monospace';
+    markCtx.fillStyle = color;
+    markCtx.fillText(text, 16, row * 64 + 44);
   });
   const weaponMarkings=new THREE.CanvasTexture(markCanvas);
   weaponMarkings.colorSpace=THREE.SRGBColorSpace;

@@ -609,6 +609,9 @@ export default function App() {
             onToggleCrouch={handleToggleCrouch}
             onToggleScopeZoom={handleToggleScopeZoom}
             onInteractLoot={() => engineRef.current?.interactLoot()}
+            onEquipCrateWeapon={(id) => engineRef.current?.equipWeaponFromCrate(id)}
+            onCloseCrate={() => engineRef.current?.closeCrateModal()}
+            onSelectBrMelee={() => engineRef.current?.selectBrMelee()}
             onUseArmorPlate={() => engineRef.current?.useArmorPlate()}
             onUseMedkit={() => engineRef.current?.useMedkit()}
             onToggleInventory={() => engineRef.current?.toggleInventory()}

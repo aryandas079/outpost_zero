@@ -8,7 +8,7 @@ import { GRENADES } from '../game/loadout';
 import { SeededRng } from '../utilities/SeededRng';
 import { sampleIslandHeight } from '../world/Terrain';
 
-export type LootCategory = 'weapon' | 'ammo' | 'armor' | 'medical' | 'grenade';
+export type LootCategory = 'crate' | 'weapon' | 'ammo' | 'armor' | 'medical' | 'grenade';
 export type LootRarity = 'common' | 'uncommon' | 'rare' | 'epic';
 
 export interface WorldLootItem {
@@ -18,6 +18,7 @@ export interface WorldLootItem {
   rarity: LootRarity;
   label: string;
   weaponId?: WeaponId;
+  crateWeapons?: WeaponId[];
   grenadeId?: GrenadeId;
   amount: number;
   pos: THREE.Vector3;
@@ -81,44 +82,17 @@ export class LootManager {
 
     for (let i = 0; i < anchors.length; i++) {
       const a = anchors[i];
-      const roll = rng.next();
+      const pool = a.tier === 'military' ? milWeapons : a.tier === 'high' ? highWeapons : standardWeapons;
+      const w1 = rng.pick(pool);
+      const w2 = rng.pick(highWeapons);
+      const w3 = rng.pick(standardWeapons);
+      const crateWeapons: WeaponId[] = Array.from(new Set<WeaponId>([w1, w2, w3])).slice(0, 3);
+      if (crateWeapons.length < 2) crateWeapons.push('carbine');
 
-      let category: LootCategory = 'ammo';
-      let rarity: LootRarity = 'common';
-      let weaponId: WeaponId | undefined;
-      let grenadeId: GrenadeId | undefined;
-      let label = '5.56 / Heavy Ammo Box';
-      let amount = 45;
-
-      if (roll < 0.38) {
-        category = 'weapon';
-        const pool = a.tier === 'military' ? milWeapons : a.tier === 'high' ? highWeapons : standardWeapons;
-        weaponId = rng.pick(pool);
-        rarity = a.tier === 'military' ? 'epic' : a.tier === 'high' ? 'rare' : 'uncommon';
-        label = WEAPON_SPECS[weaponId].name;
-        amount = 1;
-      } else if (roll < 0.62) {
-        category = 'armor';
-        rarity = 'rare';
-        label = 'Ballistic Armor Plate';
-        amount = 1;
-      } else if (roll < 0.80) {
-        category = 'medical';
-        rarity = 'uncommon';
-        label = 'Field Trauma Medkit';
-        amount = 1;
-      } else if (roll < 0.90) {
-        category = 'grenade';
-        grenadeId = rng.pick(grenades);
-        rarity = 'uncommon';
-        label = `${GRENADES[grenadeId].name} Grenade`;
-        amount = 1;
-      } else {
-        category = 'ammo';
-        rarity = 'common';
-        label = 'Tactical Ammunition Pack';
-        amount = 60;
-      }
+      const category: LootCategory = 'crate';
+      const rarity: LootRarity = a.tier === 'military' ? 'epic' : a.tier === 'high' ? 'rare' : 'uncommon';
+      const label = 'SUPPLY CRATE';
+      const amount = 1;
 
       const ox = rng.range(-1.8, 1.8);
       const oz = rng.range(-1.8, 1.8);
@@ -128,15 +102,13 @@ export class LootManager {
       if (wy < 0.1) continue;
 
       const mesh = new THREE.Group();
-      mesh.position.set(wx, wy + 0.14, wz);
-      const bodyMesh = new THREE.Mesh(
-        category === 'armor' ? plateGeo : boxGeo,
-        category === 'armor' ? armorMat : category === 'medical' ? medMat : caseMat,
-      );
-      bodyMesh.castShadow = true;
+      mesh.position.set(wx, wy + 0.36, wz);
+      const crateBody = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.72, 0.85), caseMat);
+      crateBody.castShadow = true;
+      crateBody.receiveShadow = true;
       const ringMesh = new THREE.Mesh(beaconGeo, tierMats[rarity]);
-      ringMesh.position.y = -0.09;
-      mesh.add(bodyMesh, ringMesh);
+      ringMesh.position.y = -0.32;
+      mesh.add(crateBody, ringMesh);
       mesh.traverse((o) => {
         o.userData.noCollide = true;
       });
@@ -148,10 +120,9 @@ export class LootManager {
         category,
         rarity,
         label,
-        weaponId,
-        grenadeId,
+        crateWeapons,
         amount,
-        pos: new THREE.Vector3(wx, wy + 0.14, wz),
+        pos: new THREE.Vector3(wx, wy, wz),
         mesh,
       });
     }

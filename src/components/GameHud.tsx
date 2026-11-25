@@ -23,6 +23,9 @@ export interface GameHudProps {
   onToggleCrouch: () => void;
   onToggleScopeZoom: () => void;
   onInteractLoot?: () => void;
+  onEquipCrateWeapon?: (id: WeaponId) => void;
+  onCloseCrate?: () => void;
+  onSelectBrMelee?: () => void;
   onUseArmorPlate?: () => void;
   onUseMedkit?: () => void;
   onToggleInventory?: () => void;
@@ -48,6 +51,9 @@ export const GameHud: React.FC<GameHudProps> = ({
   onDash,
   onToggleCrouch,
   onInteractLoot,
+  onEquipCrateWeapon,
+  onCloseCrate,
+  onSelectBrMelee,
   onUseArmorPlate,
   onUseMedkit,
   onToggleInventory,
@@ -149,6 +155,9 @@ export const GameHud: React.FC<GameHudProps> = ({
         onDash={onDash}
         onToggleCrouch={onToggleCrouch}
         onInteractLoot={onInteractLoot}
+        onEquipCrateWeapon={onEquipCrateWeapon}
+        onCloseCrate={onCloseCrate}
+        onSelectBrMelee={onSelectBrMelee}
         onUseArmorPlate={onUseArmorPlate}
         onUseMedkit={onUseMedkit}
         onToggleInventory={onToggleInventory}

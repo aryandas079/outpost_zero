@@ -539,11 +539,13 @@ export function buildBattleRoyaleIslandArena(
 
   const spawnPoints: THREE.Vector3[] = [];
   const pickupSpots: THREE.Vector3[] = [];
+  const lootAnchors: Array<{ pos: THREE.Vector3; poiId: string; tier: 'standard' | 'high' | 'military' }> = [];
   for (const poi of ISLAND_POIS) {
-    const wy = sampleIslandHeight(poi.x, poi.z);
+    const wy = sampleRenderedTerrainTriangleHeight(poi.x, poi.z);
     if (wy > 1.0) {
       spawnPoints.push(new THREE.Vector3(poi.x, wy, poi.z));
       pickupSpots.push(new THREE.Vector3(poi.x + 8, wy, poi.z + 8));
+      lootAnchors.push({ pos: new THREE.Vector3(poi.x, wy, poi.z), poiId: poi.id, tier: poi.lootTier });
     }
   }
 
@@ -571,7 +573,7 @@ export function buildBattleRoyaleIslandArena(
     terrainNormalAt: sampleIslandNormal,
     terrainStreamer,
     waterSystem,
-    lootAnchors: [],
+    lootAnchors,
     optimizeRendering: () => optimizeStaticArena(group, [], new Set(), islandOwnedGeometries),
     dispose: () => {
       islandOwnedGeometries.forEach((g) => g.dispose());

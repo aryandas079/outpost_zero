@@ -300,8 +300,8 @@ export const TacticalMapModal: React.FC<TacticalMapModalProps> = ({
             />
           )}
 
-          {/* Plane Flight Corridor */}
-          {isIsland && hud.radar.planePath && (
+          {/* Plane Flight Corridor (disappears once plane leaves the map) */}
+          {isIsland && hud.radar.planePath && hud.radar.planePath.active && (
             (() => {
               const p0 = worldToMapPoint(hud.radar.planePath.x0, hud.radar.planePath.z0, transform);
               const p1 = worldToMapPoint(hud.radar.planePath.x1, hud.radar.planePath.z1, transform);

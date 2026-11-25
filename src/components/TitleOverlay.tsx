@@ -197,17 +197,15 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   // Sync active loadout changes to parent & localStorage
   const commitActiveLoadout = useCallback(
     (updater: (prev: SavedLoadoutSlot) => SavedLoadoutSlot) => {
-      setLoadoutSlots((prev) => {
-        const next = prev.map((slot, idx) => (idx === activeSlotIdx ? updater(slot) : slot));
-        saveLoadoutSlots(next);
-        const updated = next[activeSlotIdx];
-        if (updated) {
-          onLoadoutChange?.(updated.loadout);
-        }
-        return next;
-      });
+      const next = loadoutSlots.map((slot, idx) => (idx === activeSlotIdx ? updater(slot) : slot));
+      setLoadoutSlots(next);
+      saveLoadoutSlots(next);
+      const updated = next[activeSlotIdx];
+      if (updated) {
+        onLoadoutChange?.(updated.loadout);
+      }
     },
-    [activeSlotIdx, onLoadoutChange],
+    [activeSlotIdx, loadoutSlots, onLoadoutChange],
   );
 
   const handleSelectSlot = (index: number) => {

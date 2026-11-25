@@ -1,7 +1,24 @@
 /**
- * Native Windows WinUI 3 + C++ host bridge (replacing legacy Electron IPC).
- * Gracefully degrades to no-ops in standard browser environments.
+ * Unified desktop host bridge supporting both Electron (`window.electronAPI`)
+ * and Windows WinUI 3 (`chrome.webview`), degrading to standard Web APIs in browsers.
  */
+
+interface ElectronBridgeApi {
+  isElectron?: boolean;
+  platform?: string;
+  minimize?: () => void;
+  maximize?: () => void;
+  close?: () => void;
+  toggleFullscreen?: () => void;
+  isFullscreen?: () => Promise<boolean>;
+  onFullscreenChange?: (cb: (isFullScreen: boolean) => void) => () => void;
+  getVersion?: () => Promise<string>;
+}
+
+function getElectronApi(): ElectronBridgeApi | undefined {
+  if (typeof window === 'undefined') return undefined;
+  return (window as unknown as { electronAPI?: ElectronBridgeApi }).electronAPI;
+}
 
 export interface NativeGpuInfo {
   adapterName: string;
@@ -58,6 +75,14 @@ class NativeDesktopBridge {
     return this.gpuInfo.isNativeHost;
   }
 
+  get isElectron(): boolean {
+    return Boolean(getElectronApi()?.isElectron);
+  }
+
+  get isDesktopHost(): boolean {
+    return this.isNativeWinUI || this.isElectron;
+  }
+
   getGpuInfo(): NativeGpuInfo {
     return this.gpuInfo;
   }
@@ -88,6 +113,11 @@ class NativeDesktopBridge {
       this.post('host:toggle-fullscreen', {});
       return;
     }
+    const electron = getElectronApi();
+    if (electron?.toggleFullscreen) {
+      electron.toggleFullscreen();
+      return;
+    }
     if (typeof document !== 'undefined') {
       if (document.fullscreenElement) {
         document.exitFullscreen?.().catch(() => {});
@@ -98,7 +128,11 @@ class NativeDesktopBridge {
   }
 
   exitApplication(): void {
-    this.post('host:exit', {});
+    if (this.isNativeWinUI) {
+      this.post('host:exit', {});
+      return;
+    }
+    getElectronApi()?.close?.();
   }
 
   toggleNativeOverlay(): void {

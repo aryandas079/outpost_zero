@@ -346,6 +346,7 @@ export interface BattleRoyaleHudState {
   deploymentCountdownSec: number;
   stormPhase: number;
   stormTimerSec: number;
+  stormWarmup?: boolean;
   stormClosing: boolean;
   stormShrinking: boolean;
   stormCenterX: number;
@@ -362,7 +363,7 @@ export interface BattleRoyaleHudState {
 export interface LootPromptHud {
   id: string;
   label: string;
-  category: 'weapon' | 'ammo' | 'armor' | 'medical' | 'grenade';
+  category: 'crate' | 'weapon' | 'ammo' | 'armor' | 'medical' | 'grenade';
   rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   keyHint: string;
 }
@@ -510,6 +511,9 @@ export interface HudSnapshot {
   outOfCombatSec?: number;
   tacticalMapOpen?: boolean;
   inventoryOpen?: boolean;
+  crateOpen?: { crateId: string; weapons: WeaponId[] } | null;
+  brGuns?: [WeaponId | null, WeaponId | null];
+  brMeleeActive?: boolean;
   shield: number;
   maxShield: number;
   armorPlates?: number;

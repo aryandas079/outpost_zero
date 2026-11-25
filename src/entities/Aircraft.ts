@@ -8,6 +8,54 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { craftedBox } from '../game/geometry';
 import { ProceduralTextures } from '../game/textures';
 
+let cachedGlbPlane: THREE.Group | null = null;
+let glbPreloadStarted = false;
+
+function preloadCustomPlaneGlb(onLoaded?: (model: THREE.Group) => void): void {
+  if (typeof window === 'undefined' || typeof fetch !== 'function') return;
+  if (cachedGlbPlane) {
+    onLoaded?.(cachedGlbPlane.clone(true));
+    return;
+  }
+  if (!glbPreloadStarted) {
+    glbPreloadStarted = true;
+    const loader = new GLTFLoader();
+    loader.load(
+      './models/battle_royale_plane.glb',
+      (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+        const maxDim = Math.max(0.001, size.x, size.y, size.z);
+        const scale = 38.0 / maxDim;
+
+        model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+        model.scale.setScalar(scale);
+        model.traverse((obj) => {
+          obj.userData.noCollide = true;
+          if ((obj as THREE.Mesh).isMesh) {
+            obj.castShadow = true;
+            obj.receiveShadow = true;
+          }
+        });
+        cachedGlbPlane = model;
+        onLoaded?.(model.clone(true));
+      },
+      undefined,
+      () => {
+        glbPreloadStarted = false;
+      },
+    );
+  }
+}
+
+if (typeof window !== 'undefined') {
+  preloadCustomPlaneGlb();
+}
+
 export interface TransportAirplaneRig {
   group: THREE.Group;
   propellers: THREE.Object3D[];
@@ -202,40 +250,52 @@ export function buildTransportAirplane(textures?: ProceduralTextures): Transport
     obj.userData.noCollide = true;
   });
 
-  // Asynchronously swap in the user's uploaded battle_royale_plane.glb in browser / Electron
+  // In browser / Electron, hide procedural fallback meshes so the old plane never flashes at match start
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
-    const loader = new GLTFLoader();
-    loader.load(
-      './models/battle_royale_plane.glb',
-      (gltf) => {
-        const model = gltf.scene;
-        const box = new THREE.Box3().setFromObject(model);
-        const size = new THREE.Vector3();
-        const center = new THREE.Vector3();
-        box.getSize(size);
-        box.getCenter(center);
-        const maxDim = Math.max(0.001, size.x, size.y, size.z);
-        const scale = 38.0 / maxDim;
+    for (const child of group.children) {
+      child.visible = false;
+    }
+    const attachCustomGlb = (model: THREE.Group) => {
+      group.clear();
+      propellers.length = 0;
+      group.add(model);
+    };
+    if (cachedGlbPlane) {
+      attachCustomGlb(cachedGlbPlane.clone(true));
+    } else {
+      const loader = new GLTFLoader();
+      loader.load(
+        './models/battle_royale_plane.glb',
+        (gltf) => {
+          const model = gltf.scene;
+          const box = new THREE.Box3().setFromObject(model);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+          const maxDim = Math.max(0.001, size.x, size.y, size.z);
+          const scale = 38.0 / maxDim;
 
-        model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
-        model.scale.setScalar(scale);
-        model.traverse((obj) => {
-          obj.userData.noCollide = true;
-          if ((obj as THREE.Mesh).isMesh) {
-            obj.castShadow = true;
-            obj.receiveShadow = true;
+          model.position.set(-center.x * scale, -center.y * scale, -center.z * scale);
+          model.scale.setScalar(scale);
+          model.traverse((obj) => {
+            obj.userData.noCollide = true;
+            if ((obj as THREE.Mesh).isMesh) {
+              obj.castShadow = true;
+              obj.receiveShadow = true;
+            }
+          });
+          cachedGlbPlane = model;
+          attachCustomGlb(model.clone(true));
+        },
+        undefined,
+        () => {
+          for (const child of group.children) {
+            child.visible = true;
           }
-        });
-
-        group.clear();
-        propellers.length = 0;
-        group.add(model);
-      },
-      undefined,
-      () => {
-        // Fallback to procedural C-130J if GLB is unavailable
-      }
-    );
+        },
+      );
+    }
   }
 
   return { group, propellers, rampLight: null };

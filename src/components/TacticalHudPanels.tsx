@@ -42,6 +42,9 @@ export interface TacticalHudShellProps {
   onDash: () => void;
   onToggleCrouch: () => void;
   onInteractLoot?: () => void;
+  onEquipCrateWeapon?: (id: WeaponId) => void;
+  onCloseCrate?: () => void;
+  onSelectBrMelee?: () => void;
   onUseArmorPlate?: () => void;
   onUseMedkit?: () => void;
   onToggleInventory?: () => void;
@@ -56,6 +59,9 @@ export const TacticalHudPanels: React.FC<TacticalHudShellProps> = ({
   onSelectWeapon,
   onThrowGrenade,
   onInteractLoot,
+  onEquipCrateWeapon,
+  onCloseCrate,
+  onSelectBrMelee,
   onUseArmorPlate,
   onUseMedkit,
   onToggleInventory,
@@ -139,8 +145,16 @@ export const TacticalHudPanels: React.FC<TacticalHudShellProps> = ({
             </div>
             {isIsland && br && (
               <div
-                className="bg-[#333D47]/90 border border-white/15 px-2.5 py-1 rounded-sm flex items-center gap-1 shadow-md font-mono text-xs font-bold tabular-nums"
-                style={{ color: br.outsideStorm ? palette.danger : '#FACC15' }}
+                className={`bg-[#333D47]/90 border border-white/15 px-2.5 py-1 rounded-sm flex items-center gap-1 shadow-md font-mono text-xs font-bold tabular-nums ${
+                  br.stormClosing ? 'animate-pulse' : ''
+                }`}
+                style={{
+                  color: br.stormClosing
+                    ? '#EF4444'
+                    : br.stormWarmup
+                      ? '#FFFFFF'
+                      : '#FACC15',
+                }}
               >
                 <Clock className="w-3.5 h-3.5" />
                 <span>{formatClock(br.stormTimerSec)}</span>
@@ -321,42 +335,94 @@ export const TacticalHudPanels: React.FC<TacticalHudShellProps> = ({
 
             {/* Bottom-Center/Right: Unified Pure-Icon Weapon Cards + Utility Icon Slots */}
             <div className="shrink-0 flex items-end gap-1.5 pointer-events-auto">
-              {/* Weapon Slots 1..4 with custom icons & direct ammo counter */}
+              {/* Weapon Slots: Max 2 Guns + 1 Melee (Bare Hands) in BR, with clear Gun Names */}
               <div className="flex items-end gap-1.5">
-                {weapons.map((wid, idx) => {
-                  const active = wid === hud.weaponId;
-                  const counts = ammoLookup.get(wid);
-                  return (
+                {isIsland ? (
+                  <>
+                    {(hud.brGuns ?? ['glock', null]).map((wid, idx) => {
+                      const active = Boolean(wid && wid === hud.weaponId && !hud.brMeleeActive);
+                      const counts = wid ? ammoLookup.get(wid) : null;
+                      return (
+                        <button
+                          key={`br-gun-${idx}`}
+                          type="button"
+                          onClick={() => wid && onSelectWeapon(wid)}
+                          disabled={!wid}
+                          className={`relative w-[96px] sm:w-[112px] h-14 px-2 py-1 rounded-sm border-2 flex flex-col items-center justify-between transition-all shadow-lg ${
+                            active
+                              ? 'bg-[#353F4B]/95 border-[#FACC15] shadow-[0_0_14px_rgba(250,204,21,0.3)] cursor-pointer'
+                              : wid
+                                ? 'bg-[#2B3641]/88 border-white/20 hover:border-white/45 cursor-pointer'
+                                : 'bg-[#1F2730]/65 border-white/10 opacity-60 cursor-default'
+                          }`}
+                        >
+                          <span className="absolute top-0.5 left-1 font-mono text-[9px] font-bold text-white/65">
+                            {idx + 1}
+                          </span>
+                          <div className="text-[10px] font-mono font-black tracking-wide text-white truncate max-w-full mt-0.5">
+                            {wid ? (WEAPON_SPECS[wid]?.shortLabel ?? wid.toUpperCase()) : 'EMPTY'}
+                          </div>
+                          {wid ? (
+                            <div className="w-full flex items-center justify-end gap-0.5 font-mono text-[10px] leading-none tabular-nums">
+                              <AmmoIconSvg className={`w-2.5 h-2.5 ${active ? 'text-[#FACC15]' : 'text-white/60'}`} />
+                              <span className={`font-black ${active ? 'text-white' : 'text-[#CBD5E1]'}`}>
+                                {counts?.ammo ?? WEAPON_SPECS[wid]?.magSize ?? 0}
+                              </span>
+                              <span className="text-white/55 text-[9px]">/{counts?.reserve ?? 0}</span>
+                            </div>
+                          ) : (
+                            <div className="text-[9px] font-mono text-white/40">NO GUN</div>
+                          )}
+                        </button>
+                      );
+                    })}
                     <button
-                      key={wid}
                       type="button"
-                      onClick={() => onSelectWeapon(wid)}
-                      title={WEAPON_SPECS[wid]?.shortLabel ?? wid}
-                      className={`relative w-[84px] sm:w-[98px] lg:w-[110px] h-13 sm:h-14 px-2 py-1 rounded-sm border-2 flex flex-col items-center justify-between transition-all cursor-pointer shadow-lg ${
-                        active
+                      onClick={() => onSelectBrMelee?.()}
+                      className={`relative w-[86px] sm:w-[98px] h-14 px-2 py-1 rounded-sm border-2 flex flex-col items-center justify-center transition-all cursor-pointer shadow-lg ${
+                        hud.brMeleeActive
                           ? 'bg-[#353F4B]/95 border-[#FACC15] shadow-[0_0_14px_rgba(250,204,21,0.3)]'
                           : 'bg-[#2B3641]/88 border-white/20 hover:border-white/45'
                       }`}
                     >
-                      <span className="absolute top-0.5 left-1 font-mono text-[9px] font-bold text-white/65">
-                        {idx + 1}
-                      </span>
-                      <div className="flex-1 flex items-center justify-center w-full">
-                        <WeaponSilhouette
-                          weaponId={wid}
-                          className={`w-14 sm:w-16 h-6 sm:h-7 ${active ? 'text-white' : 'text-[#CBD5E1]'}`}
-                        />
-                      </div>
-                      <div className="w-full flex items-center justify-end gap-0.5 font-mono text-[10px] leading-none tabular-nums">
-                        <AmmoIconSvg className={`w-2.5 h-2.5 ${active ? 'text-[#FACC15]' : 'text-white/60'}`} />
-                        <span className={`font-black ${active ? 'text-white' : 'text-[#CBD5E1]'}`}>
-                          {counts?.ammo ?? spec.magSize}
-                        </span>
-                        <span className="text-white/55 text-[9px]">/{counts?.reserve ?? 0}</span>
-                      </div>
+                      <span className="absolute top-0.5 left-1 font-mono text-[9px] font-bold text-white/65">3</span>
+                      <div className="text-[10px] font-mono font-black tracking-wide text-white">BARE HANDS</div>
+                      <div className="text-[9px] font-mono text-white/60">MELEE</div>
                     </button>
-                  );
-                })}
+                  </>
+                ) : (
+                  weapons.map((wid, idx) => {
+                    const active = wid === hud.weaponId;
+                    const counts = ammoLookup.get(wid);
+                    return (
+                      <button
+                        key={wid}
+                        type="button"
+                        onClick={() => onSelectWeapon(wid)}
+                        title={WEAPON_SPECS[wid]?.shortLabel ?? wid}
+                        className={`relative w-[92px] sm:w-[106px] h-14 px-2 py-1 rounded-sm border-2 flex flex-col items-center justify-between transition-all cursor-pointer shadow-lg ${
+                          active
+                            ? 'bg-[#353F4B]/95 border-[#FACC15] shadow-[0_0_14px_rgba(250,204,21,0.3)]'
+                            : 'bg-[#2B3641]/88 border-white/20 hover:border-white/45'
+                        }`}
+                      >
+                        <span className="absolute top-0.5 left-1 font-mono text-[9px] font-bold text-white/65">
+                          {idx + 1}
+                        </span>
+                        <div className="text-[10px] font-mono font-black tracking-wide text-white truncate max-w-full mt-0.5">
+                          {WEAPON_SPECS[wid]?.shortLabel ?? wid.toUpperCase()}
+                        </div>
+                        <div className="w-full flex items-center justify-end gap-0.5 font-mono text-[10px] leading-none tabular-nums">
+                          <AmmoIconSvg className={`w-2.5 h-2.5 ${active ? 'text-[#FACC15]' : 'text-white/60'}`} />
+                          <span className={`font-black ${active ? 'text-white' : 'text-[#CBD5E1]'}`}>
+                            {counts?.ammo ?? spec.magSize}
+                          </span>
+                          <span className="text-white/55 text-[9px]">/{counts?.reserve ?? 0}</span>
+                        </div>
+                      </button>
+                    );
+                  })
+                )}
               </div>
 
               {/* Pure-Icon Medkit Slot */}
@@ -439,6 +505,54 @@ export const TacticalHudPanels: React.FC<TacticalHudShellProps> = ({
               [SPACE] NEXT
             </button>
           )}
+        </div>
+      )}
+
+      {/* SUPPLY CRATE LOOT MENU ([E]) */}
+      {hud.crateOpen && !inFlight && (
+        <div
+          className="fixed inset-0 z-40 bg-black/55 flex items-center justify-center p-4 pointer-events-auto"
+          onClick={() => onCloseCrate?.()}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-[min(420px,92vw)] bg-[#1B242F] border-2 border-[#FACC15] rounded-sm p-4 shadow-2xl space-y-3"
+          >
+            <div className="flex items-center justify-between border-b border-white/15 pb-2">
+              <span className="font-mono text-xs font-black tracking-widest text-[#FACC15] uppercase">
+                SUPPLY CRATE · MAX 2 GUNS
+              </span>
+              <button
+                type="button"
+                onClick={() => onCloseCrate?.()}
+                className="px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded-xs font-mono text-[10px] text-white cursor-pointer"
+              >
+                [E] CLOSE
+              </button>
+            </div>
+            <div className="space-y-2">
+              {hud.crateOpen.weapons.map((wid) => (
+                <button
+                  key={wid}
+                  type="button"
+                  onClick={() => onEquipCrateWeapon?.(wid)}
+                  className="w-full bg-[#2B3641] hover:bg-[#374553] border border-white/20 hover:border-[#FACC15] rounded-sm px-3 py-2 flex items-center justify-between cursor-pointer transition-colors"
+                >
+                  <div className="text-left">
+                    <div className="font-mono text-xs font-black text-white">
+                      {WEAPON_SPECS[wid]?.name ?? wid.toUpperCase()}
+                    </div>
+                    <div className="font-mono text-[10px] text-white/60">
+                      MAG {WEAPON_SPECS[wid]?.magSize ?? 0} · RESERVE {WEAPON_SPECS[wid]?.reserveMax ?? 0}
+                    </div>
+                  </div>
+                  <span className="px-2.5 py-1 bg-[#FACC15] text-[#0F172A] font-mono text-[10px] font-black rounded-xs">
+                    EQUIP
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
       )}
 

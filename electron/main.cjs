@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, Menu, screen, session } = require('electron');
 const path = require('path');
 
 // Hardware acceleration & low-latency gaming flags for Windows
@@ -89,6 +89,11 @@ if (!gotTheLock) {
   }
 
   app.whenReady().then(() => {
+    // Allow pointer lock and fullscreen requests seamlessly for FPS mouse-look in Electron
+    session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
+      callback(permission === 'pointerLock' || permission === 'fullscreen');
+    });
+
     createWindow();
 
     app.on('activate', () => {

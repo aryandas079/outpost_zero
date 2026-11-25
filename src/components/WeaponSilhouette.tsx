@@ -3,7 +3,29 @@ import { GrenadeId, WeaponId } from '../game/types';
 
 export const PistolSvg: React.FC<{ className?: string }> = ({ className = 'w-14 h-7' }) => (
   <svg viewBox="0 0 88 44" fill="currentColor" className={className} aria-hidden="true">
-    <path d="M10 10h54l3 2v9H40l-2 4 9 14H31l-8-14h-7v-5h-6V10zm50 3h5v3h-5v-3zm-25 11 4 6h4l-4-6h-4z" fillRule="evenodd" />
+    {/* Compact Glock 17: flat squared slide, polymer frame, trigger guard & angled grip */}
+    <path d="M14 11h50v2h3v7H42l-2 4 8 14H33l-7-14h-8v-4h-4v-9zm17 11 3 5h4l-3-5h-4z" fillRule="evenodd" />
+  </svg>
+);
+
+export const DeagleSvg: React.FC<{ className?: string }> = ({ className = 'w-16 h-7' }) => (
+  <svg viewBox="0 0 96 44" fill="currentColor" className={className} aria-hidden="true">
+    {/* Iconic Desert Eagle: long heavy tapered barrel, beveled slide, spur hammer & stout grip */}
+    <path d="M10 10h66l4 3v5H56l-2 4H40l-2 4 9 13H31l-8-13h-8v-5l-5-3v-8zm5-2h8v2h-8V8zm52 4h7v2h-7v-2zm-34 11 3.5 5h4l-3.5-5h-4z" fillRule="evenodd" />
+  </svg>
+);
+
+export const UspSvg: React.FC<{ className?: string }> = ({ className = 'w-16 h-7' }) => (
+  <svg viewBox="0 0 96 44" fill="currentColor" className={className} aria-hidden="true">
+    {/* Tactical USP .45 w/ suppressor & under-rail */}
+    <path d="M12 11h44v3h28v5H56v2H40l-2 4 7 13H31l-7-13h-8v-5h-4v-9zm19 11 3 5h4l-3-5h-4z" fillRule="evenodd" />
+  </svg>
+);
+
+export const RailPistolSvg: React.FC<{ className?: string }> = ({ className = 'w-16 h-7' }) => (
+  <svg viewBox="0 0 96 44" fill="currentColor" className={className} aria-hidden="true">
+    {/* Futuristic split-rail energy pistol */}
+    <path d="M12 10h64l4 2v3H42v2h34v3H42l-2 4 8 14H32l-8-14h-8v-4h-4v-10zm19 12 3 5h4l-3-5h-4z" fillRule="evenodd" />
   </svg>
 );
 
@@ -139,7 +161,7 @@ export function WeaponSilhouette({
     case 'flashbang':
       return <GrenadeSvg className={className} />;
     case 'railpistol':
-      return <SniperSvg className={className} />;
+      return <RailPistolSvg className={className} />;
     case 'shotgun':
       return <ShotgunSvg className={className} />;
     case 'smg':
@@ -148,8 +170,10 @@ export function WeaponSilhouette({
       return <MachineGunSvg className={className} />;
     case 'marksman':
       return <SniperSvg className={className} />;
-    case 'usp':
     case 'deagle':
+      return <DeagleSvg className={className} />;
+    case 'usp':
+      return <UspSvg className={className} />;
     case 'glock':
       return <PistolSvg className={className} />;
     case 'rpg':

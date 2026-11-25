@@ -125,20 +125,20 @@ function buildChunkGeometry(centerX: number, centerZ: number, size: number, segs
 
       const island = classifyIslandAt(wx, wz);
 
-      // Tight sandy waterline margin
+      // Tight sandy waterline margin in linear RGB
       if (wy >= 0.02 && wy < 1.5 && island !== 'desert_3km2') {
         const beachT = smoothstep(0.1, 1.5, wy);
-        r = lerp(0.84, r, beachT);
-        g = lerp(0.75, g, beachT);
-        b = lerp(0.50, b, beachT);
+        r = lerp(0.56, r, beachT);
+        g = lerp(0.43, g, beachT);
+        b = lerp(0.17, b, beachT);
       }
 
       // Crisp dark slate/sandstone cliff faces on steep slopes & Hoover Dam canyon walls
       if (slope > 0.14 && wy > 2.2) {
         const nearHooverCanyon = Math.abs(wx - 60) < 260 && wz > -520 && wz < 320;
-        const cliffTargetR = island === 'desert_3km2' ? 0.62 : nearHooverCanyon ? 0.56 : 0.38;
-        const cliffTargetG = island === 'desert_3km2' ? 0.41 : nearHooverCanyon ? 0.46 : 0.41;
-        const cliffTargetB = island === 'desert_3km2' ? 0.27 : nearHooverCanyon ? 0.38 : 0.45;
+        const cliffTargetR = island === 'desert_3km2' ? 0.36 : nearHooverCanyon ? 0.27 : 0.12;
+        const cliffTargetG = island === 'desert_3km2' ? 0.16 : nearHooverCanyon ? 0.19 : 0.14;
+        const cliffTargetB = island === 'desert_3km2' ? 0.07 : nearHooverCanyon ? 0.13 : 0.17;
         const rockBlend = smoothstep(0.14, 0.28, slope);
         r = lerp(r, cliffTargetR, rockBlend);
         g = lerp(g, cliffTargetG, rockBlend);
@@ -148,9 +148,9 @@ function buildChunkGeometry(centerX: number, centerZ: number, size: number, segs
       // Snow strictly on far northern mountain peaks (never near Hoover Dam)
       if (wy > 58 && wz < -740 && slope < 0.24 && island !== 'desert_3km2') {
         const peakBlend = smoothstep(58, 74, wy) * smoothstep(-740, -920, wz);
-        r = lerp(r, 0.88, peakBlend * 0.8);
-        g = lerp(g, 0.91, peakBlend * 0.8);
-        b = lerp(b, 0.96, peakBlend * 0.8);
+        r = lerp(r, 0.72, peakBlend * 0.82);
+        g = lerp(g, 0.78, peakBlend * 0.82);
+        b = lerp(b, 0.88, peakBlend * 0.82);
       }
 
       colors[idx * 3] = r;

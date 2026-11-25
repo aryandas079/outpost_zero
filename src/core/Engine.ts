@@ -654,6 +654,11 @@ export class OutpostGameEngine {
   private hitMarkerSeq = 0;
   private crosshairDamagePops: CrosshairDamagePop[] = [];
   private landingAudioCooldown = 0;
+  private brGuns: [WeaponId | null, WeaponId | null] = ['glock', null];
+  private brMeleeActive = false;
+  private openCrate: { crateId: string; weapons: WeaponId[] } | null = null;
+  private safeZoneDelaySec = 60;
+  private safeZoneRevealed = false;
   private damagePopSeq = 0;
   private damageArcTimer = 0;
   private damageArcAngle = 0;
@@ -1388,6 +1393,12 @@ export class OutpostGameEngine {
     this.deployment.reset(randomMatchSeed);
     this.storm.reset(randomMatchSeed);
     this.inventory.reset(this.loadout);
+    this.brGuns = ['glock', null];
+    this.brMeleeActive = false;
+    this.openCrate = null;
+    this.safeZoneDelaySec = 60;
+    this.safeZoneRevealed = false;
+    this.switchWeapon('glock');
 
     this.brAirplane.group.visible = true;
     this.brAirplane.group.position.copy(this.deployment.planePos);
@@ -1697,6 +1708,8 @@ export class OutpostGameEngine {
     if (this.brPlayerRig) this.brPlayerRig.root.visible = false;
     if (this.brStormWall) this.brStormWall.visible = false;
     this.brStage = 'grounded';
+    this.brMeleeActive = false;
+    this.weaponRig.setMeleeActive?.(false);
     this.lifecycle.transition('active_match');
     this.weaponRig.root.visible = true;
 
@@ -1964,7 +1977,66 @@ export class OutpostGameEngine {
 
   public selectWeapon(id: WeaponId) {
     if (this.phase !== 'playing') return;
+    if (this.mapId === 'island') {
+      this.brMeleeActive = false;
+      this.weaponRig.setMeleeActive?.(false);
+      this.weaponRig.root.visible = this.brStage === 'grounded';
+    }
     this.switchWeapon(id);
+  }
+
+  public selectBrMelee() {
+    if (this.phase !== 'playing' || this.mapId !== 'island' || this.brStage !== 'grounded') return;
+    this.brMeleeActive = true;
+    this.reloading = false;
+    this.inspectHeld = false;
+    this.scopeAlpha = 0;
+    this.weaponRig.setScopeOverlayHidden?.(false);
+    this.weaponRig.root.visible = true;
+    this.weaponRig.setMeleeActive?.(true);
+    this.emitHud(true);
+  }
+
+  public closeCrateModal() {
+    if (!this.openCrate) return;
+    this.openCrate = null;
+    if (this.phase === 'playing') this.requestPointerLockSafe();
+    this.emitHud(true);
+  }
+
+  public equipWeaponFromCrate(newId: WeaponId) {
+    if (!this.openCrate || this.mapId !== 'island') return;
+    const idxInCrate = this.openCrate.weapons.indexOf(newId);
+    if (idxInCrate === -1) return;
+
+    // Max 2 guns: fill empty slot first, otherwise replace active gun slot
+    if (this.brGuns[0] === newId || this.brGuns[1] === newId) {
+      this.reserveMap[newId] = Math.min(WEAPON_SPECS[newId].reserveMax, this.reserveMap[newId] + WEAPON_SPECS[newId].magSize * 2);
+    } else if (this.brGuns[0] === null) {
+      this.brGuns[0] = newId;
+    } else if (this.brGuns[1] === null) {
+      this.brGuns[1] = newId;
+    } else {
+      const replaceIdx = !this.brMeleeActive && this.brGuns[0] === this.weaponId ? 0 : 1;
+      this.brGuns[replaceIdx] = newId;
+    }
+
+    this.ammoMap[newId] = WEAPON_SPECS[newId].magSize;
+    this.reserveMap[newId] = WEAPON_SPECS[newId].reserveMax;
+    this.brMeleeActive = false;
+    this.weaponRig.setMeleeActive?.(false);
+    this.weaponRig.root.visible = true;
+    this.switchWeapon(newId);
+
+    this.openCrate.weapons.splice(idxInCrate, 1);
+    if (this.openCrate.weapons.length === 0) {
+      const item = this.lootManager.items.find((i) => i.id === this.openCrate?.crateId);
+      if (item) this.lootManager.consumeItem(item);
+      this.openCrate = null;
+      this.requestPointerLockSafe();
+    }
+    this.pickupNotice = `EQUIPPED · ${WEAPON_SPECS[newId].shortLabel}`;
+    this.emitHud(true);
   }
 
   public toggleScopeZoom() {
@@ -2021,8 +2093,20 @@ export class OutpostGameEngine {
 
   public interactLoot(): boolean {
     if (this.phase !== 'playing' || this.mapId !== 'island' || this.brStage !== 'grounded') return false;
-    const item = this.lootManager.findClosestInteractable(this.playerPos, 3.0);
+    if (this.openCrate) {
+      this.closeCrateModal();
+      return true;
+    }
+    const item = this.lootManager.findClosestInteractable(this.playerPos, 3.2);
     if (!item) return false;
+    if (item.category === 'crate' && item.crateWeapons && item.crateWeapons.length > 0) {
+      this.openCrate = { crateId: item.id, weapons: [...item.crateWeapons] };
+      this.tacticalMapOpen = false;
+      this.inventoryOpen = false;
+      this.exitPointerLockSafe();
+      this.emitHud(true);
+      return true;
+    }
     this.lootManager.consumeItem(item);
     if (item.category === 'weapon' && item.weaponId) {
       const res = this.inventory.equipWeaponPickup(item.weaponId);
@@ -2421,10 +2505,16 @@ export class OutpostGameEngine {
       this.tryStartReload();
     }
     if (code === this.settings.controls.grenade && !repeat) this.throwGrenade();
-    if (code === this.settings.controls.sidearm && !repeat) this.switchWeapon(this.loadout.sidearm);
-    if (code === this.settings.controls.launcher && !repeat && this.loadout.launcher) this.switchWeapon(this.loadout.launcher);
-    if (code === this.settings.controls.primary1 && !repeat) this.switchWeapon(this.loadout.primary[0]);
-    if (code === this.settings.controls.primary2 && !repeat) this.switchWeapon(this.loadout.primary[1]);
+    if (this.mapId === 'island') {
+      if (code === this.settings.controls.primary1 && !repeat && this.brGuns[0]) this.selectWeapon(this.brGuns[0]);
+      if (code === this.settings.controls.primary2 && !repeat && this.brGuns[1]) this.selectWeapon(this.brGuns[1]);
+      if (code === this.settings.controls.sidearm && !repeat) this.selectBrMelee();
+    } else {
+      if (code === this.settings.controls.sidearm && !repeat) this.switchWeapon(this.loadout.sidearm);
+      if (code === this.settings.controls.launcher && !repeat && this.loadout.launcher) this.switchWeapon(this.loadout.launcher);
+      if (code === this.settings.controls.primary1 && !repeat) this.switchWeapon(this.loadout.primary[0]);
+      if (code === this.settings.controls.primary2 && !repeat) this.switchWeapon(this.loadout.primary[1]);
+    }
   }
 
   private handleEngineKeyUp(code: string) {
@@ -2454,6 +2544,19 @@ export class OutpostGameEngine {
   private handleMouseWheel(deltaY: number) {
     if (['railpistol', 'marksman'].includes(this.weaponId) && this.isAdsActive()) {
       this.toggleScopeZoom();
+      return;
+    }
+    if (this.mapId === 'island') {
+      const slots: Array<WeaponId | 'MELEE'> = [
+        ...(this.brGuns[0] ? [this.brGuns[0]] : []),
+        ...(this.brGuns[1] ? [this.brGuns[1]] : []),
+        'MELEE',
+      ];
+      const cur = this.brMeleeActive ? 'MELEE' : this.weaponId;
+      const idx = Math.max(0, slots.indexOf(cur));
+      const next = slots[(idx + (deltaY > 0 ? 1 : slots.length - 1)) % slots.length];
+      if (next === 'MELEE') this.selectBrMelee();
+      else this.selectWeapon(next);
       return;
     }
     const weapons = inventoryWeapons(this.loadout);
@@ -2522,7 +2625,7 @@ export class OutpostGameEngine {
     this.reloadAudioStage = 0;
     this.inspectHeld = false;
     this.recoilRecoveryPitch = 0;
-    this.fireCooldown = 0.22;
+    this.fireCooldown = 0.12;
     this.scopeAlpha = 0;
     this.weaponRig.setScopeOverlayHidden(false);
     this.weaponRig.setWeapon(next);
@@ -2530,7 +2633,7 @@ export class OutpostGameEngine {
   }
 
   private tryStartReload() {
-    if (this.reloading || (this.mapId === 'island' && this.brStage !== 'grounded')) return;
+    if (this.reloading || this.brMeleeActive || (this.mapId === 'island' && this.brStage !== 'grounded')) return;
     const spec = WEAPON_SPECS[this.weaponId];
     const current = this.ammoMap[this.weaponId];
     const reserve = this.reserveMap[this.weaponId];
@@ -2714,6 +2817,42 @@ export class OutpostGameEngine {
 
   private executeShot() {
     if (this.grenadeCooldown > 0.12 || (this.mapId === 'island' && this.brStage !== 'grounded')) return;
+    if (this.brMeleeActive) {
+      this.fireCooldown = 0.36;
+      this.inspectHeld = false;
+      this.weaponRig.triggerMeleePunch?.();
+      this.audio.playDash();
+      const origin = this.camera.getWorldPosition(new THREE.Vector3());
+      const dir = this.camera.getWorldDirection(new THREE.Vector3());
+      for (const enemy of this.enemies) {
+        if (!enemy.alive) continue;
+        const center = enemy.root.position.clone().add(new THREE.Vector3(0, 1.05, 0));
+        const toEnemy = center.clone().sub(origin);
+        const dist = toEnemy.length();
+        if (dist <= 2.65 && dir.dot(toEnemy.normalize()) > 0.72) {
+          const res = applyArmorHealthDamage(38, enemy.armor ?? 0, enemy.hp);
+          if ('armor' in enemy) enemy.armor = res.remainingArmor;
+          enemy.hp = res.remainingHealth;
+          this.damageDealt += res.armorDamage + res.healthDamage;
+          enemy.hitFlashTimer = 0.1;
+          enemy.flinchKick = 0.7;
+          this.hitMarkerDuration = res.killed ? 0.3 : 0.2;
+          this.hitMarkerTimer = this.hitMarkerDuration;
+          this.hitMarkerCrit = false;
+          this.hitMarkerKill = res.killed;
+          this.hitMarkerArmor = res.kind === 'armor';
+          this.hitMarkerArmorBreak = res.armorBroken;
+          this.hitMarkerSeq++;
+          this.audio.playHitMarker(false, res.killed);
+          this.pushCrosshairDamagePop(res.armorDamage, res.healthDamage, res.armorBroken, false, res.killed);
+          this.spawnDamageNumber(center, 38, false, res.killed, res.kind === 'armor');
+          if (res.killed) this.handleEnemyKilled(enemy, false, center, this.weaponId);
+          break;
+        }
+      }
+      this.emitHud(true);
+      return;
+    }
     const spec = WEAPON_SPECS[this.weaponId];
     const currentAmmo = this.ammoMap[this.weaponId];
     const adsActive = this.isAdsActive();
@@ -4169,9 +4308,11 @@ export class OutpostGameEngine {
       const wantsFire = spec.automatic ? anyFireHeld : this.fireJustPressed;
       if (wantsFire && this.fireCooldown <= 0) {
         this.executeShot();
+        this.fireJustPressed = false;
+      } else if (this.fireCooldown <= 0) {
+        this.fireJustPressed = false;
       }
     }
-    this.fireJustPressed = false;
 
     const reloadProg = this.reloading
       ? THREE.MathUtils.clamp(1 - Math.max(0, this.reloadTimer) / this.reloadDuration, 0, 1)
@@ -4640,8 +4781,18 @@ export class OutpostGameEngine {
       }
     }
 
-    // 4. Shrinking Battle Royale Storm Circle & Vertical-Fading 3D Storm Wall
-    const stormEv = this.storm.update(dt);
+    // 4. Shrinking Battle Royale Storm Circle & Vertical-Fading 3D Storm Wall (reveals 60s after player lands)
+    if (!this.safeZoneRevealed && this.brStage === 'grounded') {
+      this.safeZoneDelaySec = Math.max(0, this.safeZoneDelaySec - dt);
+      if (this.safeZoneDelaySec <= 0) {
+        this.safeZoneRevealed = true;
+        this.waveBanner = 'SAFE ZONE MARKED ON MAP';
+        this.waveBannerTimer = 4.0;
+      }
+    }
+    const stormEv = this.safeZoneRevealed
+      ? this.storm.update(dt)
+      : { phaseStartedClosing: false, phaseAdvanced: false };
     if (stormEv.phaseStartedClosing) {
       this.waveBanner = `STORM PHASE ${this.storm.phase} CLOSING · MOVE TO SAFE ZONE`;
       this.waveBannerTimer = 3.5;
@@ -5263,24 +5414,24 @@ export class OutpostGameEngine {
     }
     this.sceneFog.color.copy(this.sceneBgColor);
     const baseFog = THREE.MathUtils.lerp(a.fogDensity, b.fogDensity, t);
-    this.sceneFog.density = isIsland ? baseFog * 0.042 : baseFog;
+    this.sceneFog.density = isIsland ? baseFog * 0.014 : baseFog;
 
     // 3. Directional Sun, Hemisphere Fill, Sky Rim & Practical Interior Glow
     this.sunLight.color.lerpColors(a.sunLightColor, b.sunLightColor, t);
     if (isIslandDay) this.sunLight.color.setHex(0xfff3db);
     this.sunLight.intensity = isIslandDay
-      ? 1.84
-      : THREE.MathUtils.lerp(a.sunLightIntensity, b.sunLightIntensity, t) * (isIsland ? 1.15 : 1.0);
+      ? 2.18
+      : THREE.MathUtils.lerp(a.sunLightIntensity, b.sunLightIntensity, t) * (isIsland ? 1.25 : 1.0);
 
     this.hemiLight.color.lerpColors(a.hemiSkyColor, b.hemiSkyColor, t);
     this.hemiLight.groundColor.lerpColors(a.hemiGroundColor, b.hemiGroundColor, t);
     if (isIsland) {
       if (isIslandDay) this.hemiLight.color.setHex(0x9bd0ff);
-      this.hemiLight.groundColor.lerp(new THREE.Color(0x5d7e42), 0.78);
+      this.hemiLight.groundColor.lerp(new THREE.Color(0x3a5e22), 0.78);
     }
     this.hemiLight.intensity = isIslandDay
-      ? 1.16
-      : THREE.MathUtils.lerp(a.hemiIntensity, b.hemiIntensity, t) * (isIsland ? 1.48 : 1.0);
+      ? 0.72
+      : THREE.MathUtils.lerp(a.hemiIntensity, b.hemiIntensity, t) * (isIsland ? 1.0 : 1.0);
 
     this.rimLight.color.lerpColors(a.rimColor, b.rimColor, t);
     this.rimLight.intensity = THREE.MathUtils.lerp(a.rimIntensity, b.rimIntensity, t);
@@ -5493,8 +5644,9 @@ export class OutpostGameEngine {
             remainingPassengers: this.deployment.getRemainingPassengers(this.brStage === 'airdrop_plane'),
             deploymentCountdownSec: Math.ceil(this.deployment.countdownSec),
             stormPhase: this.storm.phase,
-            stormTimerSec: Math.max(0, Math.ceil(this.storm.timerSec)),
-            stormClosing: this.storm.closing,
+            stormTimerSec: Math.max(0, Math.ceil(this.safeZoneRevealed ? this.storm.timerSec : this.safeZoneDelaySec)),
+            stormWarmup: !this.safeZoneRevealed,
+            stormClosing: this.safeZoneRevealed && this.storm.closing,
             stormShrinking: this.storm.closing,
             stormCenterX: this.storm.centerX,
             stormCenterZ: this.storm.centerZ,
@@ -5524,6 +5676,9 @@ export class OutpostGameEngine {
       outOfCombatSec: this.outOfCombatSec,
       tacticalMapOpen: this.tacticalMapOpen,
       inventoryOpen: this.inventoryOpen,
+      crateOpen: this.openCrate ? { crateId: this.openCrate.crateId, weapons: [...this.openCrate.weapons] } : null,
+      brGuns: isBr ? [...this.brGuns] as [WeaponId | null, WeaponId | null] : undefined,
+      brMeleeActive: isBr ? this.brMeleeActive : undefined,
       shield: Math.floor(this.shield),
       maxShield: this.maxShield,
       armorPlates: this.inventory.armorPlates,
@@ -5676,20 +5831,21 @@ export class OutpostGameEngine {
               r: this.storm.radius,
               targetCx: this.storm.targetX,
               targetCz: this.storm.targetZ,
-              targetR: this.brStage === 'grounded' ? this.storm.targetRadius : 0,
+              targetR: this.safeZoneRevealed ? this.storm.targetRadius : 0,
             }
           : undefined,
-        planePath: isBr
-          ? {
-              x0: this.deployment.planeStart.x,
-              z0: this.deployment.planeStart.z,
-              x1: this.deployment.planeEnd.x,
-              z1: this.deployment.planeEnd.z,
-              planeX: this.deployment.planePos.x,
-              planeZ: this.deployment.planePos.z,
-              active: this.deployment.planeProgress < 1.05,
-            }
-          : undefined,
+        planePath:
+          isBr && this.deployment.planeProgress < 1.05
+            ? {
+                x0: this.deployment.planeStart.x,
+                z0: this.deployment.planeStart.z,
+                x1: this.deployment.planeEnd.x,
+                z1: this.deployment.planeEnd.z,
+                planeX: this.deployment.planePos.x,
+                planeZ: this.deployment.planePos.z,
+                active: true,
+              }
+            : undefined,
         players: this.remotePlayers
           ? this.remotePlayers.getPlayerPositions().map((p) => ({
               id: p.id,
